@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+many2many_batch.access_many2many_batch_test_item,access_many2many_batch_test_item,many2many_batch.model_many2many_batch_test_item,base.group_user,1,1,1,1
+many2many_batch.access_many2many_batch_test_parent,access_many2many_batch_test_parent,many2many_batch.model_many2many_batch_test_parent,base.group_user,1,1,1,1

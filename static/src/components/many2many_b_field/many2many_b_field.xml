@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="many2many_batch.Many2ManyBField">
+    <div class="o_many2many_b_field_wrapper">
+
+        <!-- ── Toggle pills ────────────────────────────────────────────
+             Only shown when batch_group_by is configured on the field.
+             Hidden entirely when the widget falls back to plain many2many.
+        ─────────────────────────────────────────────────────────────── -->
+        <div t-if="hasBatchMode" class="o_many2many_b_toggle mb-2">
+            <div class="btn-group o_many2many_b_btn_group" role="group" aria-label="View mode">
+                <button type="button"
+                        class="btn btn-sm o_many2many_b_pill"
+                        data-mode="individual"
+                        t-att-class="{
+                            'btn-primary':          batchState.mode === 'individual',
+                            'btn-outline-secondary': batchState.mode !== 'individual'
+                        }"
+                        t-on-click="() => this.setMode('individual')">
+                    <i class="fa fa-list me-1"/>Individual
+                </button>
+                <button type="button"
+                        class="btn btn-sm o_many2many_b_pill"
+                        data-mode="batch"
+                        t-att-class="{
+                            'btn-primary':          batchState.mode === 'batch',
+                            'btn-outline-secondary': batchState.mode !== 'batch'
+                        }"
+                        t-on-click="() => this.setMode('batch')">
+                    <i class="fa fa-th me-1"/>Batch
+                </button>
+            </div>
+        </div>
+
+        <!-- ── Individual mode ─────────────────────────────────────────
+             Delegates entirely to the standard X2ManyField template.
+             `t-call` inlines the parent template in the context of this
+             component instance, so all X2ManyField methods/state are
+             available (super.setup() was called in our setup()).
+        ─────────────────────────────────────────────────────────────── -->
+        <t t-if="!hasBatchMode or batchState.mode === 'individual'">
+            <t t-call="web.X2ManyField"/>
+        </t>
+
+        <!-- ── Batch mode ──────────────────────────────────────────────
+             Custom grouped-table renderer. Qty controls call back to
+             onQtyChange() which creates / removes real records via
+             StaticList.addNew() / StaticList.delete().
+        ─────────────────────────────────────────────────────────────── -->
+        <t t-elif="batchState.mode === 'batch'">
+            <BatchRenderer
+                records="list.records"
+                groupByFields="groupByFields"
+                defaultValueKeys="defaultValueKeys"
+                fields="list.fields"
+                readonly="isReadonly"
+                onQtyChange.bind="onQtyChange"
+                onAddDraft.bind="onAddDraft"
+                onCloneDraft.bind="onCloneDraft"
+                onDiscardDraft.bind="onDiscardDraft"
+            />
+        </t>
+
+    </div>
+</t>
+
+</templates>

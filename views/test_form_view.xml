@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!--
+        Test fixture views for the many2many_b widget tour.
+        No menu entry is created — these views are only reached via the
+        action XMLID used in the HttpCase.start_tour() call.
+    -->
+
+    <record id="view_test_parent_form" model="ir.ui.view">
+        <field name="name">many2many.batch.test.parent.form</field>
+        <field name="model">many2many.batch.test.parent</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <field name="name"/>
+                    <field name="item_ids"
+                           widget="many2many_b"
+                           options='{"batch_group_by": "brand,model", "default_mode": "batch"}'
+                           string="Items">
+                        <list>
+                            <field name="brand"/>
+                            <field name="model"/>
+                            <field name="plate"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_test_batch_parent" model="ir.actions.act_window">
+        <field name="name">Test Batch Widget</field>
+        <field name="res_model">many2many.batch.test.parent</field>
+        <field name="view_mode">form</field>
+    </record>
+</odoo>

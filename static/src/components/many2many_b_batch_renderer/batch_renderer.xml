@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="many2many_batch.BatchRenderer">
+    <div class="o_many2many_b_batch_renderer">
+
+        <table class="o_many2many_b_table table table-sm table-bordered mb-0"
+               t-if="groups.length or state.drafts.length or !props.readonly">
+            <thead>
+                <tr class="o_many2many_b_header">
+                    <th class="o_many2many_b_qty_col">Qty</th>
+                    <th t-foreach="props.groupByFields"
+                        t-as="field"
+                        t-key="field"
+                        class="o_many2many_b_group_col">
+                        <t t-esc="getFieldLabel(field)"/>
+                    </th>
+                    <th t-if="!props.readonly" class="o_many2many_b_actions_col"/>
+                </tr>
+            </thead>
+
+            <tbody>
+                <!-- Existing group rows -->
+                <tr t-foreach="groups"
+                    t-as="group"
+                    t-key="group.key"
+                    class="o_many2many_b_group_row">
+
+                    <!-- Qty cell -->
+                    <td class="o_many2many_b_qty_cell align-middle">
+                        <div t-if="!props.readonly"
+                             class="o_many2many_b_qty_controls d-flex align-items-center gap-1">
+                            <button type="button"
+                                    class="btn btn-sm btn-secondary o_many2many_b_btn_minus"
+                                    t-on-click="() => this.onDecrement(group)"
+                                    t-att-disabled="(group.records.length &lt;= 1 or !isAllRecordsVirgin(group)) ? true : undefined"
+                                    t-att-title="!isAllRecordsVirgin(group) ? 'Some records have data — switch to Individual mode to remove a specific one' : undefined">
+                                <i class="fa fa-minus"/>
+                            </button>
+                            <span class="o_many2many_b_qty_value fw-bold px-2 text-center">
+                                <t t-esc="group.records.length"/>
+                            </span>
+                            <button type="button"
+                                    class="btn btn-sm btn-secondary o_many2many_b_btn_plus"
+                                    t-on-click="() => this.onIncrement(group)">
+                                <i class="fa fa-plus"/>
+                            </button>
+                        </div>
+                        <span t-else="" class="o_many2many_b_qty_readonly fw-bold">
+                            <t t-esc="group.records.length"/>
+                        </span>
+                    </td>
+
+                    <!-- One editable cell per group-by field.
+                         GroupByCell renders <Field> on group.records[0] and
+                         propagates changes to siblings (bulk-edit semantic). -->
+                    <td t-foreach="props.groupByFields"
+                        t-as="fieldName"
+                        t-key="fieldName"
+                        class="align-middle">
+                        <GroupByCell t-if="props.fields[fieldName]"
+                                     record="group.records[0]"
+                                     records="group.records"
+                                     name="fieldName"
+                                     readonly="props.readonly"/>
+                        <span t-else="" class="text-muted fst-italic">—</span>
+                    </td>
+
+                    <!-- Actions -->
+                    <td t-if="!props.readonly" class="o_many2many_b_actions_cell text-center align-middle">
+                        <button type="button"
+                                class="btn btn-sm btn-link text-danger o_many2many_b_btn_remove p-0"
+                                t-on-click="() => this.onRemoveAll(group)"
+                                title="Remove this group">
+                            <i class="fa fa-trash"/>
+                        </button>
+                    </td>
+                </tr>
+
+                <!-- Draft rows (in-flight "Add a line" records) -->
+                <tr t-foreach="state.drafts"
+                    t-as="entry"
+                    t-key="entry.record.id"
+                    class="o_many2many_b_pending_row table-warning">
+
+                    <td class="o_many2many_b_qty_cell align-middle">
+                        <input type="number"
+                               class="form-control form-control-sm o_many2many_b_qty_input text-center"
+                               t-att-value="entry.qty"
+                               min="1"
+                               t-on-change="(ev) => this.updateDraftQty(entry, ev.target.value)"/>
+                    </td>
+
+                    <td t-foreach="props.groupByFields"
+                        t-as="fieldName"
+                        t-key="fieldName"
+                        class="align-middle">
+                        <GroupByCell t-if="props.fields[fieldName]"
+                                     record="entry.record"
+                                     records="[entry.record]"
+                                     name="fieldName"/>
+                        <span t-else="" class="text-muted fst-italic">—</span>
+                    </td>
+
+                    <td class="o_many2many_b_actions_cell text-center align-middle">
+                        <button type="button"
+                                class="btn btn-sm btn-success me-1"
+                                t-on-click="() => this.confirmDraft(entry)"
+                                title="Confirm">
+                            <i class="fa fa-check"/>
+                        </button>
+                        <button type="button"
+                                class="btn btn-sm btn-secondary"
+                                t-on-click="() => this.discardDraft(entry)"
+                                title="Discard">
+                            <i class="fa fa-times"/>
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+
+            <!-- Footer: Add a line -->
+            <tfoot t-if="!props.readonly">
+                <tr>
+                    <td t-att-colspan="props.groupByFields.length + 2">
+                        <button type="button"
+                                class="btn btn-sm btn-link o_many2many_b_btn_add_line ps-0"
+                                t-on-click="addDraft">
+                            <i class="fa fa-plus me-1"/>Add a line
+                        </button>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div t-if="groups.length === 0 and state.drafts.length === 0 and props.readonly"
+             class="o_many2many_b_empty text-muted fst-italic p-2">
+            No records.
+        </div>
+
+    </div>
+</t>
+
+</templates>

@@ -1,0 +1,81 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// many2many_b — Toggle pills + Batch table styles
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Toggle pills ─────────────────────────────────────────────────────────────
+
+.o_many2many_b_toggle {
+    .o_many2many_b_btn_group {
+        // True pill shape: override Bootstrap's btn-group square corners.
+        .o_many2many_b_pill {
+            &:first-child {
+                border-top-left-radius: 1rem;
+                border-bottom-left-radius: 1rem;
+            }
+            &:last-child {
+                border-top-right-radius: 1rem;
+                border-bottom-right-radius: 1rem;
+            }
+        }
+    }
+}
+
+// ── Batch table ──────────────────────────────────────────────────────────────
+
+.o_many2many_b_batch_renderer {
+    .o_many2many_b_table {
+        // Qty column: fixed narrow width to stay compact.
+        .o_many2many_b_qty_col {
+            width: 140px;
+            min-width: 140px;
+            white-space: nowrap;
+        }
+
+        // Actions column (trash / confirm / discard buttons).
+        .o_many2many_b_actions_col,
+        .o_many2many_b_actions_cell {
+            width: 72px;
+            min-width: 72px;
+            white-space: nowrap;
+        }
+
+        // Qty stepper (−  2  +).
+        .o_many2many_b_qty_controls {
+            .o_many2many_b_qty_value {
+                min-width: 2rem;
+                display: inline-block;
+                text-align: center;
+            }
+        }
+
+        // Qty input inside a pending row.
+        .o_many2many_b_qty_input {
+            width: 70px;
+            text-align: center;
+        }
+
+        // Pending rows get a subtle yellow tint (Bootstrap table-warning).
+        .o_many2many_b_pending_row td {
+            vertical-align: middle;
+        }
+
+        // "—" placeholder for fields not filled during batch entry.
+        .o_many2many_b_undefined {
+            opacity: 0.55;
+        }
+
+        thead th {
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+    }
+
+    // Empty state shown in readonly when there are no records.
+    .o_many2many_b_empty {
+        border: 1px dashed var(--o-gray-300, #dee2e6);
+        border-radius: 4px;
+        min-height: 2.5rem;
+        display: flex;
+        align-items: center;
+    }
+}
