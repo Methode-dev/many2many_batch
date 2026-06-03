@@ -116,25 +116,28 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
         },
 
         // ── 5. Increment Renault group (2 → 3) ──────────────────────────────
+        // Groups are sorted alphabetically by brand (declared first in
+        // batch_group_by="brand,model"), so Peugeot is :first-child and
+        // Renault is :nth-child(2) regardless of insertion order.
         {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_btn_plus",
-            content: "Increment the first group (Renault Megane)",
+            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_plus",
+            content: "Increment the Renault Megane group",
             run: "click",
         },
         {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_qty_value:contains('3')",
+            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_qty_value:contains('3')",
             content: "Renault Megane qty is now 3",
             auto: true,
         },
 
         // ── 6. Decrement Renault group (3 → 2) ──────────────────────────────
         {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_btn_minus",
-            content: "Decrement the first group back to 2",
+            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_minus",
+            content: "Decrement the Renault Megane group back to 2",
             run: "click",
         },
         {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_qty_value:contains('2')",
+            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_qty_value:contains('2')",
             content: "Renault Megane qty is back to 2",
             auto: true,
         },
@@ -165,8 +168,9 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
         },
 
         // ── 9. Remove the Peugeot group ──────────────────────────────────────
+        // Peugeot is :first-child (alphabetical-by-brand sort).
         {
-            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_remove",
+            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_btn_remove",
             content: "Remove the Peugeot 208 group",
             run: "click",
         },

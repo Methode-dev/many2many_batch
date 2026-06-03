@@ -70,8 +70,14 @@ in both.
 > compiler before `extractProps` runs — they never reach the component.
 > `props.attrs` and `props.options` do **not** exist; use **`props.crudOptions`**.
 
-`batch_group_by` is a comma-separated list of field names on the **related**
-model. The widget reads them from `this.props.crudOptions.batch_group_by`.
+`batch_group_by` is a comma-separated **ordered** list of field names on the
+**related** model. The widget reads them from
+`this.props.crudOptions.batch_group_by`. Groups are sorted by displayValues
+using this list as a tuple sort key (primary, secondary, ...) — e.g.
+`"article_type,material_type"` shows article types alphabetically with
+materials sorted within each type. Empty/unset values sort last at each level.
+Keying is by raw IDs/values (not display names), so two distinct comodel rows
+sharing a display_name never collapse into one group.
 
 ---
 

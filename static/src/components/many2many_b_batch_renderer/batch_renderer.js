@@ -94,6 +94,13 @@ export class BatchRenderer extends Component {
      * Returns the list of groups derived from props.records, excluding any
      * draft records (which are rendered as their own rows).
      *
+     * Groups are keyed by the *raw* values of the configured groupByFields
+     * (Many2one → id, Selection/Char → value) so two distinct comodel rows
+     * with the same display_name never collapse.  Groups are sorted by
+     * displayValues in the declared groupByFields order, giving deterministic
+     * output for ordered multi-field grouping (e.g. article_type, then
+     * material_type within each type).
+     *
      * Each group:
      *   {
      *     key:           stable JSON key for t-key,
@@ -109,18 +116,20 @@ export class BatchRenderer extends Component {
             if (draftIds.has(record.id)) continue;
             const fieldValues = {};
             const displayValues = {};
+            const keyParts = [];
             for (const field of this.props.groupByFields) {
                 const value = record.data[field];
                 fieldValues[field] = value;
                 displayValues[field] = this._formatValue(value);
+                keyParts.push(this._keyValue(value));
             }
-            const key = JSON.stringify(this.props.groupByFields.map((f) => displayValues[f]));
+            const key = JSON.stringify(keyParts);
             if (!byKey.has(key)) {
                 byKey.set(key, { key, fieldValues, displayValues, records: [] });
             }
             byKey.get(key).records.push(record);
         }
-        return Array.from(byKey.values());
+        return Array.from(byKey.values()).sort((a, b) => this._compareGroups(a, b));
     }
 
     _formatValue(value) {
@@ -132,6 +141,31 @@ export class BatchRenderer extends Component {
             if ("id" in value) return String(value.id);
         }
         return String(value);
+    }
+
+    _keyValue(value) {
+        if (value === false || value === null || value === undefined || value === "") return null;
+        if (value && typeof value === "object" && "id" in value) return value.id;
+        if (Array.isArray(value) && value.length === 2) return value[0];
+        return value;
+    }
+
+    /**
+     * Order groups by displayValues using the declared groupByFields as a
+     * sort key tuple (primary, secondary, ...).  Empty/unset values sort
+     * last within each level so populated groups always lead.
+     */
+    _compareGroups(a, b) {
+        for (const field of this.props.groupByFields) {
+            const av = a.displayValues[field] || "";
+            const bv = b.displayValues[field] || "";
+            if (av === bv) continue;
+            if (av === "") return 1;
+            if (bv === "") return -1;
+            const cmp = av.localeCompare(bv);
+            if (cmp !== 0) return cmp;
+        }
+        return 0;
     }
 
     // -------------------------------------------------------------------------
