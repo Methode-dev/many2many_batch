@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onWillUnmount, useEffect, useState } from "@odoo/owl";
+import { Component, onWillUnmount, useEffect, useRef, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { GroupByCell } from "../group_by_cell/group_by_cell";
@@ -38,7 +38,18 @@ export class BatchRenderer extends Component {
 
     setup() {
         this.dialogService = useService("dialog");
+        this.rootRef = useRef("root");
+        this._pendingFocusDraftId = null;
         this.state = useState({ drafts: [] }); // [{ record, qty }]
+
+        useEffect(
+            () => {
+                if (this._pendingFocusDraftId === null) return;
+                this._focusDraftRow(this._pendingFocusDraftId);
+                this._pendingFocusDraftId = null;
+            },
+            () => [this.state.drafts.length]
+        );
 
         // Flip every record into edit mode so embedded <Field> widgets render
         // editable.  Records loaded from DB default to "readonly" mode in
@@ -245,6 +256,28 @@ export class BatchRenderer extends Component {
         const draft = await this.props.onAddDraft();
         if (draft) {
             this.state.drafts.push({ record: draft, qty: 1 });
+            this._pendingFocusDraftId = draft.id;
+        }
+    }
+
+    /**
+     * After the draft row is mounted, focus the first editable cell so the
+     * user can start typing immediately without an extra click.
+     */
+    _focusDraftRow(draftId) {
+        const root = this.rootRef.el;
+        if (!root) return;
+        const rows = root.querySelectorAll(".o_many2many_b_pending_row");
+        const row = rows[rows.length - 1];
+        if (!row) return;
+        const target = row.querySelector(
+            "input:not([type='hidden']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [contenteditable='true']"
+        );
+        if (target) {
+            target.focus();
+            if (typeof target.select === "function") {
+                try { target.select(); } catch (_) {}
+            }
         }
     }
 

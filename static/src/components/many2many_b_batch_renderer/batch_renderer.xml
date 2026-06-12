@@ -2,19 +2,19 @@
 <templates xml:space="preserve">
 
 <t t-name="many2many_batch.BatchRenderer">
-    <div class="o_many2many_b_batch_renderer">
+    <div class="o_many2many_b_batch_renderer" t-ref="root">
 
         <table class="o_many2many_b_table table table-sm table-bordered mb-0"
                t-if="groups.length or state.drafts.length or !props.readonly">
             <thead>
                 <tr class="o_many2many_b_header">
-                    <th class="o_many2many_b_qty_col">Qty</th>
                     <th t-foreach="props.groupByFields"
                         t-as="field"
                         t-key="field"
                         class="o_many2many_b_group_col">
                         <t t-esc="getFieldLabel(field)"/>
                     </th>
+                    <th class="o_many2many_b_qty_col text-end">Qty</th>
                     <th t-if="!props.readonly" class="o_many2many_b_actions_col"/>
                 </tr>
             </thead>
@@ -26,10 +26,25 @@
                     t-key="group.key"
                     class="o_many2many_b_group_row">
 
+                    <!-- One editable cell per group-by field.
+                         GroupByCell renders <Field> on group.records[0] and
+                         propagates changes to siblings (bulk-edit semantic). -->
+                    <td t-foreach="props.groupByFields"
+                        t-as="fieldName"
+                        t-key="fieldName"
+                        class="o_many2many_b_group_cell align-middle">
+                        <GroupByCell t-if="props.fields[fieldName]"
+                                     record="group.records[0]"
+                                     records="group.records"
+                                     name="fieldName"
+                                     readonly="props.readonly"/>
+                        <span t-else="" class="text-muted fst-italic">—</span>
+                    </td>
+
                     <!-- Qty cell -->
                     <td class="o_many2many_b_qty_cell align-middle">
                         <div t-if="!props.readonly"
-                             class="o_many2many_b_qty_controls d-flex align-items-center gap-1">
+                             class="o_many2many_b_qty_controls d-flex align-items-center gap-1 justify-content-end">
                             <button type="button"
                                     class="btn btn-sm btn-secondary o_many2many_b_btn_minus"
                                     t-on-click="() => this.onDecrement(group)"
@@ -46,24 +61,9 @@
                                 <i class="fa fa-plus"/>
                             </button>
                         </div>
-                        <span t-else="" class="o_many2many_b_qty_readonly fw-bold">
+                        <span t-else="" class="o_many2many_b_qty_readonly fw-bold d-block text-end">
                             <t t-esc="group.records.length"/>
                         </span>
-                    </td>
-
-                    <!-- One editable cell per group-by field.
-                         GroupByCell renders <Field> on group.records[0] and
-                         propagates changes to siblings (bulk-edit semantic). -->
-                    <td t-foreach="props.groupByFields"
-                        t-as="fieldName"
-                        t-key="fieldName"
-                        class="align-middle">
-                        <GroupByCell t-if="props.fields[fieldName]"
-                                     record="group.records[0]"
-                                     records="group.records"
-                                     name="fieldName"
-                                     readonly="props.readonly"/>
-                        <span t-else="" class="text-muted fst-italic">—</span>
                     </td>
 
                     <!-- Actions -->
@@ -81,25 +81,25 @@
                 <tr t-foreach="state.drafts"
                     t-as="entry"
                     t-key="entry.record.id"
-                    class="o_many2many_b_pending_row table-warning">
-
-                    <td class="o_many2many_b_qty_cell align-middle">
-                        <input type="number"
-                               class="form-control form-control-sm o_many2many_b_qty_input text-center"
-                               t-att-value="entry.qty"
-                               min="1"
-                               t-on-change="(ev) => this.updateDraftQty(entry, ev.target.value)"/>
-                    </td>
+                    class="o_many2many_b_pending_row">
 
                     <td t-foreach="props.groupByFields"
                         t-as="fieldName"
                         t-key="fieldName"
-                        class="align-middle">
+                        class="o_many2many_b_group_cell align-middle">
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="entry.record"
                                      records="[entry.record]"
                                      name="fieldName"/>
                         <span t-else="" class="text-muted fst-italic">—</span>
+                    </td>
+
+                    <td class="o_many2many_b_qty_cell align-middle text-end">
+                        <input type="number"
+                               class="form-control form-control-sm o_many2many_b_qty_input text-center"
+                               t-att-value="entry.qty"
+                               min="1"
+                               t-on-change="(ev) => this.updateDraftQty(entry, ev.target.value)"/>
                     </td>
 
                     <td class="o_many2many_b_actions_cell text-center align-middle">

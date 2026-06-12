@@ -22,8 +22,39 @@
 
 // ── Batch table ──────────────────────────────────────────────────────────────
 
+.o_field_many2many_b {
+    width: 100%;
+}
+
 .o_many2many_b_batch_renderer {
     .o_many2many_b_table {
+        // Horizontal breathing room on the header cells (not the whole table).
+        thead th {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        // Match the header padding on body cells so columns line up cleanly
+        // and the row height stays stable whether or not a cell is focused.
+        tbody td {
+            padding-left: 1rem;
+            padding-right: 1rem;
+            height: 2.5rem;       // stable row height — prevents the jump-on-click
+            vertical-align: middle;
+        }
+
+        // The embedded <Field> widget should fill the cell so it has a fixed
+        // hit area whether or not it's focused (otherwise the input renders
+        // compact when unfocused and expands on click).
+        .o_field_widget,
+        .o_field_widget > div,
+        .o_field_widget input,
+        .o_field_widget .o-autocomplete,
+        .o_field_widget .o-autocomplete--input {
+            width: 100%;
+            min-height: 1.75rem;
+        }
+
         // Qty column: fixed narrow width to stay compact.
         .o_many2many_b_qty_col {
             width: 140px;
@@ -52,9 +83,9 @@
         .o_many2many_b_qty_input {
             width: 70px;
             text-align: center;
+            display: inline-block;
         }
 
-        // Pending rows get a subtle yellow tint (Bootstrap table-warning).
         .o_many2many_b_pending_row td {
             vertical-align: middle;
         }
