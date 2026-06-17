@@ -28,24 +28,33 @@ export class GroupByCell extends Component {
     };
 
     setup() {
+        // Snapshot the host record at mount.  props.record is `group.records[0]`,
+        // which OWL re-evaluates on every render — and the first render after a
+        // bulk-edit puts a *different* record in that slot (the original host
+        // has moved to a new group containing just itself).  If the effect dep
+        // read `this.props.record`, the value comparison would happen against
+        // the new sibling-turned-first-record (unchanged value) and miss the
+        // edit entirely, leaving the row split.  Anchoring on the original
+        // record keeps the dep faithful to "did the user-edited record's value
+        // change?" regardless of how OWL reshuffles the group rows afterwards.
+        this._host = this.props.record;
         useEffect(
             () => this._propagateToSiblings(),
-            () => [this._valueKey(this.props.record.data[this.props.name])]
+            () => [this._valueKey(this._host.data[this.props.name])]
         );
     }
 
     /**
      * After the host record's value changed, push the new value into every
-     * sibling whose current value differs.  No-op on initial mount because
-     * all siblings already share the value (that's what put them in the
-     * same group).
+     * other record currently in the group.  Reads `props.records` (live) so
+     * records added after mount (qty+ clones) are included; reads `_host`
+     * (snapshot) so we always know which record the user actually edited.
      */
     _propagateToSiblings() {
         const fieldName = this.props.name;
-        const hostValue = this.props.record.data[fieldName];
-        for (let i = 1; i < this.props.records.length; i++) {
-            const sibling = this.props.records[i];
-            if (sibling === this.props.record) continue;
+        const hostValue = this._host.data[fieldName];
+        for (const sibling of this.props.records) {
+            if (sibling === this._host) continue;
             if (!this._valuesEqual(sibling.data[fieldName], hostValue)) {
                 sibling.update({ [fieldName]: hostValue });
             }

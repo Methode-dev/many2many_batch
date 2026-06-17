@@ -5,7 +5,7 @@
     <div class="o_many2many_b_batch_renderer">
 
         <table class="o_many2many_b_table table table-sm table-bordered mb-0"
-               t-if="groups.length or state.drafts.length or !props.readonly">
+               t-if="groups.length or pendingDrafts.length or !props.readonly">
             <thead>
                 <tr class="o_many2many_b_header">
                     <th class="o_many2many_b_qty_col">Qty</th>
@@ -28,6 +28,7 @@
 
                     <!-- Qty cell -->
                     <td class="o_many2many_b_qty_cell align-middle">
+                        <t t-set="flash" t-value="mergeFlashFor(group)"/>
                         <div t-if="!props.readonly"
                              class="o_many2many_b_qty_controls d-flex align-items-center gap-1">
                             <button type="button"
@@ -37,8 +38,13 @@
                                     t-att-title="!isAllRecordsVirgin(group) ? 'Some records have data — switch to Individual mode to remove a specific one' : undefined">
                                 <i class="fa fa-minus"/>
                             </button>
-                            <span class="o_many2many_b_qty_value fw-bold px-2 text-center">
+                            <span class="o_many2many_b_qty_value fw-bold px-2 text-center position-relative"
+                                  t-att-class="flash ? 'o_many2many_b_qty_pulse' : ''"
+                                  t-att-data-flash-token="flash and flash.token">
                                 <t t-esc="group.records.length"/>
+                                <span t-if="flash"
+                                      class="o_many2many_b_qty_delta"
+                                      t-att-key="flash.token">+<t t-esc="flash.delta"/></span>
                             </span>
                             <button type="button"
                                     class="btn btn-sm btn-secondary o_many2many_b_btn_plus"
@@ -78,7 +84,7 @@
                 </tr>
 
                 <!-- Draft rows (in-flight "Add a line" records) -->
-                <tr t-foreach="state.drafts"
+                <tr t-foreach="pendingDrafts"
                     t-as="entry"
                     t-key="entry.record.id"
                     class="o_many2many_b_pending_row table-warning">
@@ -133,7 +139,7 @@
             </tfoot>
         </table>
 
-        <div t-if="groups.length === 0 and state.drafts.length === 0 and props.readonly"
+        <div t-if="groups.length === 0 and pendingDrafts.length === 0 and props.readonly"
              class="o_many2many_b_empty text-muted fst-italic p-2">
             No records.
         </div>

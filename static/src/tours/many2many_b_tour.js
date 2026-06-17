@@ -116,29 +116,33 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
         },
 
         // ── 5. Increment Renault group (2 → 3) ──────────────────────────────
-        // Groups are sorted alphabetically by brand (declared first in
-        // batch_group_by="brand,model"), so Peugeot is :first-child and
-        // Renault is :nth-child(2) regardless of insertion order.
+        // Initially: Renault is :first-child (added first), Peugeot
+        // :nth-child(2).  Clicking [+] adds a new Renault record at the
+        // bottom of the underlying list, which bumps the Renault group to
+        // the bottom of the table — so after the click Renault is
+        // :nth-child(2) and Peugeot is :first-child.
         {
-            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_plus",
+            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_btn_plus",
             content: "Increment the Renault Megane group",
             run: "click",
         },
         {
             trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_qty_value:contains('3')",
-            content: "Renault Megane qty is now 3",
+            content: "Renault Megane qty is now 3 (and the group has bumped to row 2)",
             auto: true,
         },
 
         // ── 6. Decrement Renault group (3 → 2) ──────────────────────────────
+        // Removing the last-added Renault record drops its lastIndex back
+        // below Peugeot's, so Renault returns to :first-child.
         {
             trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_minus",
             content: "Decrement the Renault Megane group back to 2",
             run: "click",
         },
         {
-            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_qty_value:contains('2')",
-            content: "Renault Megane qty is back to 2",
+            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_qty_value:contains('2')",
+            content: "Renault Megane qty is back to 2 (and the group returns to row 1)",
             auto: true,
         },
 
@@ -168,9 +172,10 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
         },
 
         // ── 9. Remove the Peugeot group ──────────────────────────────────────
-        // Peugeot is :first-child (alphabetical-by-brand sort).
+        // After the increment+decrement above, the order is back to Renault
+        // (:first-child) then Peugeot (:nth-child(2)).
         {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_btn_remove",
+            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_remove",
             content: "Remove the Peugeot 208 group",
             run: "click",
         },
