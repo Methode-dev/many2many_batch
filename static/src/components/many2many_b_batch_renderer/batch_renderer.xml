@@ -2,7 +2,17 @@
 <templates xml:space="preserve">
 
 <t t-name="many2many_batch.BatchRenderer">
-    <div class="o_many2many_b_batch_renderer" t-ref="root">
+    <div class="o_many2many_b_batch_renderer position-relative" t-ref="root">
+
+        <!-- Busy overlay — shown while a multi-record async op is running.
+             Semi-transparent so the user can see where they are while waiting. -->
+        <div t-if="state.isBusy"
+             class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+             style="background:rgba(255,255,255,.65);z-index:10;">
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+        </div>
 
         <table class="o_many2many_b_table table table-sm table-bordered mb-0"
                t-if="groups.length or pendingDrafts.length or !props.readonly">
@@ -24,7 +34,7 @@
                 <tr t-foreach="groups"
                     t-as="group"
                     t-key="group.key"
-                    class="o_many2many_b_group_row">
+                    t-att-class="{ 'o_many2many_b_group_row': True, 'o_many2many_b_newly_created': isHighlighted(group.records[0].id) }">
 
                     <!-- One editable cell per group-by field.
                          GroupByCell renders <Field> on group.records[0] and
@@ -35,7 +45,6 @@
                         class="o_many2many_b_group_cell align-middle">
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="group.records[0]"
-                                     records="group.records"
                                      name="fieldName"
                                      readonly="props.readonly"/>
                         <span t-else="" class="text-muted fst-italic">—</span>
@@ -95,7 +104,6 @@
                         class="o_many2many_b_group_cell align-middle">
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="entry.record"
-                                     records="[entry.record]"
                                      name="fieldName"/>
                         <span t-else="" class="text-muted fst-italic">—</span>
                     </td>
