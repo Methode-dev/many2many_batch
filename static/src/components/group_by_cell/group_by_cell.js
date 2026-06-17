@@ -1,110 +1,71 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onPatched } from "@odoo/owl";
+import { Component } from "@odoo/owl";
 import { Field } from "@web/views/fields/field";
+import { Domain } from "@web/core/domain";
 
 /**
- * Renders a single group-by cell in the batch view.
+ * Thin wrapper around Odoo's <Field> for a group-by cell in the batch table.
  *
- * Wraps Odoo's <Field> component bound to the FIRST record of the group
- * (`record`), giving the user a proper widget (Many2one dropdown, date
- * picker, etc.).  When the user changes the value, an effect propagates
- * it to every other record in the group via record.update() — i.e. a
- * bulk-edit semantic: editing state_id on a row of 3 vehicles updates
- * all 3.  The table then re-groups on the next render.
+ * Propagation of value changes to all records in the same group is handled
+ * by BatchRenderer, which wraps group.records[0].update() and awaits each
+ * sibling update in sequence.  This component has no propagation logic.
  *
- * Single-record groups (records.length === 1) are just a plain Field
- * with no propagation.
+ * Domain forwarding
+ * ─────────────────
+ * In Odoo 19 the view compiler bakes domain expressions directly into compiled
+ * template code; they are NOT stored in activeFields.  GroupByCell bypasses
+ * the compiler, so activeFields[name].domain is always undefined here.
+ *
+ * Instead we use the pre-computed "allowed_<field>_ids" Many2many pattern:
+ * if the comodel record exposes e.g. allowed_visa_situation_ids in its
+ * evalContext, we build [['id', 'in', <ids>]] and pass it to <Field>.
+ *
+ * Only applied to many2one fields — other widgets (e.g. IntegerField) do not
+ * accept domain in their static props and OWL would throw an unknown-key error.
  */
 export class GroupByCell extends Component {
     static template = "many2many_batch.GroupByCell";
     static components = { Field };
 
     static props = {
-        record: { type: Object },          // host record (group.records[0])
-        records: { type: Array },          // all records in the group
-        name: { type: String },            // field name
+        record: { type: Object },
+        name: { type: String },
         readonly: { type: Boolean, optional: true },
     };
 
-    setup() {
-        // Watch props.record across patches.  On every patch we ask:
-        // "did the record that was at props.record on the previous patch
-        // just have its value change?"  If yes, that's the user's edit —
-        // push the new value to the current sibling set.
-        //
-        // Why track across patches instead of snapshotting at mount:
-        // a cell can mount mid-async-flow (e.g. during draft confirm,
-        // between awaited addNewRecord calls — the draft is still filtered
-        // out of groups, so props.record at that instant is a clone, not
-        // the soon-to-be-host original).  By the time the user edits, the
-        // cell has been reused for the residual group; a mount-time
-        // snapshot would still point at the clone, whose value never
-        // changes, and the propagation would never fire.  Tracking the
-        // most recently-seen record sidesteps this: when the user edits,
-        // `_lastRecord` still points at the row they were looking at,
-        // regardless of which record was first at mount time.
-        this._lastRecord = null;
-        this._lastValueKey = null;
+    get fieldProps() {
+        const record = this.props.record;
+        const name = this.props.name;
+        const base = { record, name, readonly: this.props.readonly };
 
-        onMounted(() => this._snapshotLast());
-        onPatched(() => {
-            const last = this._lastRecord;
-            if (last) {
-                const currentKey = this._valueKey(last.data[this.props.name]);
-                if (currentKey !== this._lastValueKey) {
-                    this._propagateFrom(last);
-                }
-            }
-            this._snapshotLast();
-        });
-    }
+        const fieldType = record.fields?.[name]?.type;
+        if (fieldType !== "many2one") {
+            return base;
+        }
 
-    _snapshotLast() {
-        this._lastRecord = this.props.record;
-        this._lastValueKey = this._valueKey(
-            this.props.record.data[this.props.name]
-        );
-    }
-
-    /**
-     * Push `host`'s current value at this field into every other record
-     * currently in the group whose value differs.
-     */
-    _propagateFrom(host) {
-        const fieldName = this.props.name;
-        const hostValue = host.data[fieldName];
-        for (const sibling of this.props.records) {
-            if (sibling === host) continue;
-            if (!this._valuesEqual(sibling.data[fieldName], hostValue)) {
-                sibling.update({ [fieldName]: hostValue });
+        // Primary path: domain stored in activeFields (Odoo <19 / future versions).
+        const domainExpr = record.activeFields?.[name]?.domain;
+        if (domainExpr) {
+            try {
+                return { ...base, domain: new Domain(domainExpr).toList(record.evalContext) };
+            } catch (e) {
+                console.warn(`[GroupByCell:${name}] domain eval failed:`, e, domainExpr);
             }
         }
-    }
 
-    /**
-     * Compare two field values.  Many2one is special: equal if same id,
-     * regardless of representation ([id,name] vs {id,display_name}).
-     */
-    _valuesEqual(a, b) {
-        if (a === b) return true;
-        const aId = this._extractId(a);
-        const bId = this._extractId(b);
-        if (aId !== null || bId !== null) return aId === bId;
-        return false;
-    }
+        // Fallback: allowed_<field_base>_ids in evalContext.
+        // visa_situation_id → allowed_visa_situation_ids
+        const allowedKey = `allowed_${name.replace(/_id$/, "")}_ids`;
+        const allowedIds = record.evalContext?.[allowedKey];
+        if (allowedIds !== undefined && allowedIds !== false) {
+            try {
+                return { ...base, domain: [["id", "in", [...allowedIds]]] };
+            } catch (e) {
+                console.warn(`[GroupByCell:${name}] allowed-ids fallback failed:`, e);
+            }
+        }
 
-    _extractId(value) {
-        if (value && typeof value === "object" && "id" in value) return value.id;
-        if (Array.isArray(value) && value.length >= 1) return value[0];
-        return null;
-    }
-
-    /** Stable key for the value-change comparison. */
-    _valueKey(value) {
-        const id = this._extractId(value);
-        if (id !== null) return `id:${id}`;
-        if (value === false || value === null || value === undefined) return "empty";
-        return `v:${String(value)}`;
+        return base;
     }
 }

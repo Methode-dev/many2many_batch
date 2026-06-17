@@ -2,9 +2,7 @@
 <templates xml:space="preserve">
 
 <t t-name="many2many_batch.GroupByCell">
-    <Field record="props.record"
-           name="props.name"
-           readonly="props.readonly"/>
+    <Field t-props="fieldProps"/>
 </t>
 
 </templates>

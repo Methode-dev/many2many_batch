@@ -5,6 +5,7 @@ import { makeContext } from "@web/core/context";
 import { registry } from "@web/core/registry";
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
 import { BatchRenderer } from "../many2many_b_batch_renderer/batch_renderer";
+import { dbg, dbgErr, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
 
 /**
  * Many2manyB — a One2many/Many2many widget with two view modes:
@@ -120,25 +121,59 @@ export class Many2ManyBField extends X2ManyField {
      */
     async onQtyChange({ group, delta }) {
         if (delta === "remove_all") {
+            // ── LOG ─────────────────────────────────────────────────────────
+            dbgGroup(`QTY REMOVE ALL | group key: ${group.key} | ${group.records.length} records`);
+            for (const [i, r] of group.records.entries()) {
+                dbg(`  record[${i}]:`, snap(r, this.groupByFields));
+            }
+            // ────────────────────────────────────────────────────────────────
             for (const record of [...group.records]) {
                 await this.list.delete(record);
             }
+            dbg("AFTER  all deleted");
+            dbgGroupEnd();
             return;
         }
 
         if (delta > 0) {
+            // ── LOG ─────────────────────────────────────────────────────────
+            dbgGroup(`QTY INCREMENT +${delta} | group key: ${group.key}`);
+            dbg("ACTION  group fieldValues:", group.fieldValues);
+            // ────────────────────────────────────────────────────────────────
             const context = this._buildContext(group.fieldValues);
-            for (let i = 0; i < delta; i++) {
-                await this.list.addNewRecord({ context, position: "bottom" });
+            // Fan out all addNewRecord calls in parallel — each makes a
+            // default_get RPC; running them concurrently cuts N serial
+            // round-trips down to one parallel batch.
+            const newRecords = await Promise.all(
+                Array.from({ length: delta }, () =>
+                    this.list.addNewRecord({ context, position: "bottom" })
+                )
+            );
+            dbg("STEP 1  addNewRecord ×", delta, "done:", newRecords.map((r) => snap(r, this.groupByFields)));
+            // Apply field values synchronously — no RPC, no extra renders.
+            // Runs before OWL flushes so every record lands in the right group
+            // on the very first render after the await.
+            for (const r of newRecords) {
+                if (r) this._applyFieldValuesDirect(r, group.fieldValues);
             }
+            dbg("STEP 2  _applyFieldValuesDirect done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
+            dbgGroupEnd();
             return;
         }
 
         if (delta < 0) {
             const toRemove = group.records.slice(delta); // last |delta| items
+            // ── LOG ─────────────────────────────────────────────────────────
+            dbgGroup(`QTY DECREMENT ${delta} | group key: ${group.key}`);
+            for (const [i, r] of toRemove.entries()) {
+                dbg(`  removing record[${i}]:`, snap(r, this.groupByFields));
+            }
+            // ────────────────────────────────────────────────────────────────
             for (const record of toRemove) {
                 await this.list.delete(record);
             }
+            dbg("AFTER  deleted");
+            dbgGroupEnd();
         }
     }
 
@@ -167,15 +202,82 @@ export class Many2ManyBField extends X2ManyField {
         for (const field of this.groupByFields) {
             fieldValues[field] = draft.data[field];
         }
+
+        // ── LOG ─────────────────────────────────────────────────────────────
+        dbgGroup(`CLONE DRAFT #${draft.id} × ${qty - 1} clones`);
+        dbg("ACTION  draft:", snap(draft, this.groupByFields));
+        dbg("        fieldValues to propagate:", fieldValues);
+        // ────────────────────────────────────────────────────────────────────
+
         const context = this._buildContext(fieldValues);
-        for (let i = 0; i < qty - 1; i++) {
-            await this.list.addNewRecord({ context, position: "bottom" });
+        const newRecords = await Promise.all(
+            Array.from({ length: qty - 1 }, () =>
+                this.list.addNewRecord({ context, position: "bottom" })
+            )
+        );
+        dbg("STEP 1  addNewRecord ×", qty - 1, "done:", newRecords.map((r) => snap(r, this.groupByFields)));
+        for (const r of newRecords) {
+            if (r) this._applyFieldValuesDirect(r, fieldValues);
         }
+        dbg("STEP 2  _applyFieldValuesDirect done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
+        dbgGroupEnd();
     }
 
     /** Delete a discarded draft from the bound list. */
     async onDiscardDraft(draft) {
         await this.list.delete(draft);
+    }
+
+    /**
+     * Synchronously stamp fieldValues onto a brand-new record (isNew=true).
+     *
+     * Why synchronous?  addNewRecord returns after its default_get RPC but
+     * before OWL flushes its render queue.  By writing record.data and
+     * record._changes here — still inside the same microtask — every new
+     * record already carries the right group-by values when OWL renders for
+     * the first time.  The result is a single clean render instead of:
+     *   render-with-null-values → await onchange RPC → render-with-real-values
+     *
+     * We write both data (display) and _changes (save payload).  For new
+     * records the two share the same reactive object in Odoo 19, so one write
+     * covers both; the explicit _changes write is a belt-and-suspenders guard
+     * for cases where they diverge (e.g. after a recompute).
+     *
+     * The context passed to addNewRecord still carries default_<field> keys so
+     * the server receives the right values on save even if _changes is ever
+     * recomputed from scratch.
+     */
+    _applyFieldValuesDirect(record, fieldValues) {
+        for (const [f, v] of Object.entries(fieldValues)) {
+            if (v === false || v === null || v === undefined || v === "") continue;
+            record.data[f] = v;
+            if (record._changes && typeof record._changes === "object") {
+                record._changes[f] = v;
+            }
+        }
+    }
+
+    /**
+     * Explicitly write fieldValues onto a freshly-created record.
+     * Only writes fields whose value is set (not false/null/undefined/empty).
+     * This ensures the new record's data and _changes are both written so that
+     * it joins the correct batch group immediately and survives validation.
+     */
+    async _applyFieldValues(record, fieldValues) {
+        const updates = Object.fromEntries(
+            Object.entries(fieldValues).filter(
+                ([, v]) => v !== false && v !== null && v !== undefined && v !== ""
+            )
+        );
+        if (!Object.keys(updates).length) {
+            dbg("_applyFieldValues: nothing to write (all values are falsy)");
+            return;
+        }
+        try {
+            await record.update(updates);
+        } catch (err) {
+            dbgErr("_applyFieldValues: record.update() failed on #" + record.id, err, updates);
+        }
     }
 
     /**

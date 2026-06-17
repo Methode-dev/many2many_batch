@@ -1,0 +1,22 @@
+// Smooth transitions when rows reorder (e.g. due to bulk attribute edits)
+.o_many2many_b_batch_renderer {
+    .o_many2many_b_table {
+        tbody tr {
+            transition: transform 200ms ease-in-out;
+
+            // Newly created/added rows: quiet yellow fade-out
+            &.o_many2many_b_newly_created {
+                animation: o_many2many_b_highlight_fade 2s ease-in-out forwards;
+            }
+        }
+    }
+}
+
+@keyframes o_many2many_b_highlight_fade {
+    0% {
+        background-color: rgba(255, 235, 59, 0.3);  // Quiet yellow
+    }
+    100% {
+        background-color: transparent;
+    }
+}
