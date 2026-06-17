@@ -77,6 +77,26 @@
                 display: inline-block;
                 text-align: center;
             }
+
+            // Brief colour flash on the qty number when a draft confirm
+            // merges new records into an existing group.
+            .o_many2many_b_qty_pulse {
+                animation: o-m2m-b-qty-pulse 1.2s ease-out;
+            }
+
+            // Floating "+N" badge that fades up over the qty number after
+            // a merge.  Absolutely positioned so it doesn't shift layout.
+            .o_many2many_b_qty_delta {
+                position: absolute;
+                left: 50%;
+                top: -0.25rem;
+                transform: translate(-50%, 0);
+                color: var(--bs-primary, #714b67);
+                font-size: 0.8rem;
+                font-weight: 700;
+                pointer-events: none;
+                animation: o-m2m-b-qty-delta 1.2s ease-out forwards;
+            }
         }
 
         // Qty input inside a pending row.
@@ -109,4 +129,18 @@
         display: flex;
         align-items: center;
     }
+}
+
+// ── Merge-flash animations ───────────────────────────────────────────────────
+
+@keyframes o-m2m-b-qty-pulse {
+    0%   { color: var(--bs-primary, #714b67); transform: scale(1); }
+    25%  { color: var(--bs-primary, #714b67); transform: scale(1.25); }
+    100% { color: inherit;                    transform: scale(1); }
+}
+
+@keyframes o-m2m-b-qty-delta {
+    0%   { opacity: 0; transform: translate(-50%,   0); }
+    20%  { opacity: 1; transform: translate(-50%,  -2px); }
+    100% { opacity: 0; transform: translate(-50%, -18px); }
 }

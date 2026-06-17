@@ -41,6 +41,13 @@ export class BatchRenderer extends Component {
         this.rootRef = useRef("root");
         this._pendingFocusDraftId = null;
         this.state = useState({ drafts: [] }); // [{ record, qty }]
+        this.state = useState({
+            drafts: [],         // [{ record, qty }]
+            mergeFlash: null,   // { key, delta, token } — animates the qty cell
+                                // of an existing group right after a draft
+                                // confirm absorbed records into it
+        });
+        this._mergeFlashToken = 0;
 
         useEffect(
             () => {
@@ -89,12 +96,25 @@ export class BatchRenderer extends Component {
     // Drafts
     // -------------------------------------------------------------------------
 
-    get draftRecordIds() {
-        const ids = new Set();
-        for (const entry of this.state.drafts) {
-            ids.add(entry.record.id);
-        }
-        return ids;
+    /**
+     * Drafts whose underlying record is still present in props.records by
+     * **object reference**.  Reference-identity (not record.id) is the right
+     * primitive here because a view switch can auto-save and reload the list,
+     * which swaps the OWL record object for a brand-new one with a different
+     * id (virtual → real).  Without this prune, the stale draft entry would
+     * still render its row while the freshly-swapped record also surfaces in
+     * `groups` (id no longer matches the stored draft id) — yielding the
+     * duplicate-row flicker seen during widget destruction.  With it, the
+     * draft entry drops out on the same render the new record joins `groups`,
+     * so the validated row visually replaces the draft row.
+     */
+    get pendingDrafts() {
+        const live = new Set(this.props.records);
+        return this.state.drafts.filter((entry) => live.has(entry.record));
+    }
+
+    get draftRecords() {
+        return new Set(this.pendingDrafts.map((entry) => entry.record));
     }
 
     // -------------------------------------------------------------------------
@@ -107,10 +127,12 @@ export class BatchRenderer extends Component {
      *
      * Groups are keyed by the *raw* values of the configured groupByFields
      * (Many2one → id, Selection/Char → value) so two distinct comodel rows
-     * with the same display_name never collapse.  Groups are sorted by
-     * displayValues in the declared groupByFields order, giving deterministic
-     * output for ordered multi-field grouping (e.g. article_type, then
-     * material_type within each type).
+     * with the same display_name never collapse.  Order follows each group's
+     * **oldest** record (first occurrence) in props.records: a new group with
+     * no prior match lands at the bottom (its first — and only — record was
+     * just appended), but when a draft confirms into an *existing* group the
+     * group keeps the position of its original record instead of jumping to
+     * the bottom alongside the freshly-appended clones.
      *
      * Each group:
      *   {
@@ -121,10 +143,11 @@ export class BatchRenderer extends Component {
      *   }
      */
     get groups() {
-        const draftIds = this.draftRecordIds;
+        const draftRecords = this.draftRecords;
         const byKey = new Map();
+        let position = 0;
         for (const record of this.props.records) {
-            if (draftIds.has(record.id)) continue;
+            if (draftRecords.has(record)) continue;
             const fieldValues = {};
             const displayValues = {};
             const keyParts = [];
@@ -136,11 +159,12 @@ export class BatchRenderer extends Component {
             }
             const key = JSON.stringify(keyParts);
             if (!byKey.has(key)) {
-                byKey.set(key, { key, fieldValues, displayValues, records: [] });
+                byKey.set(key, { key, fieldValues, displayValues, records: [], _firstIndex: position });
             }
             byKey.get(key).records.push(record);
+            position++;
         }
-        return Array.from(byKey.values()).sort((a, b) => this._compareGroups(a, b));
+        return Array.from(byKey.values()).sort((a, b) => a._firstIndex - b._firstIndex);
     }
 
     _formatValue(value) {
@@ -162,21 +186,21 @@ export class BatchRenderer extends Component {
     }
 
     /**
-     * Order groups by displayValues using the declared groupByFields as a
-     * sort key tuple (primary, secondary, ...).  Empty/unset values sort
-     * last within each level so populated groups always lead.
+     * Build the group key for a single record using the same scheme as the
+     * `groups` getter — needed by mergeFlash detection to match a draft
+     * against existing groups before it is confirmed.
      */
-    _compareGroups(a, b) {
-        for (const field of this.props.groupByFields) {
-            const av = a.displayValues[field] || "";
-            const bv = b.displayValues[field] || "";
-            if (av === bv) continue;
-            if (av === "") return 1;
-            if (bv === "") return -1;
-            const cmp = av.localeCompare(bv);
-            if (cmp !== 0) return cmp;
-        }
-        return 0;
+    _recordGroupKey(record) {
+        const keyParts = this.props.groupByFields.map((field) =>
+            this._keyValue(record.data[field])
+        );
+        return JSON.stringify(keyParts);
+    }
+
+    /** View helper: returns the merge-flash entry for this group, or null. */
+    mergeFlashFor(group) {
+        const flash = this.state.mergeFlash;
+        return flash && flash.key === group.key ? flash : null;
     }
 
     // -------------------------------------------------------------------------
@@ -288,8 +312,28 @@ export class BatchRenderer extends Component {
 
     async confirmDraft(entry) {
         if (entry.qty < 1) entry.qty = 1;
+        // Detect "this draft will merge into an existing group" BEFORE the
+        // groups list rebuilds — once we splice the draft out of state.drafts
+        // it's just another record in props.records and we lose the signal.
+        const draftKey = this._recordGroupKey(entry.record);
+        const targetGroup = this.groups.find((g) => g.key === draftKey);
+        const isMerge = !!targetGroup;
+        const addedQty = entry.qty;
+
         await this.props.onCloneDraft({ draft: entry.record, qty: entry.qty });
         this._removeDraft(entry);
+
+        if (isMerge) {
+            const token = ++this._mergeFlashToken;
+            this.state.mergeFlash = { key: draftKey, delta: addedQty, token };
+            // Auto-clear after the animation has played; guard against a
+            // newer merge flash overriding ours in the meantime.
+            setTimeout(() => {
+                if (this.state.mergeFlash && this.state.mergeFlash.token === token) {
+                    this.state.mergeFlash = null;
+                }
+            }, 1200);
+        }
     }
 
     async discardDraft(entry) {
