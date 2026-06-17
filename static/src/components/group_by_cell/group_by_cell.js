@@ -23,6 +23,7 @@ import { Domain } from "@web/core/domain";
  *
  * Only applied to many2one fields — other widgets (e.g. IntegerField) do not
  * accept domain in their static props and OWL would throw an unknown-key error.
+=======
  */
 export class GroupByCell extends Component {
     static template = "many2many_batch.GroupByCell";
@@ -68,4 +69,5 @@ export class GroupByCell extends Component {
 
         return base;
     }
+
 }
