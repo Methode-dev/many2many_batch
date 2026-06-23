@@ -72,12 +72,14 @@ in both.
 
 `batch_group_by` is a comma-separated **ordered** list of field names on the
 **related** model. The widget reads them from
-`this.props.crudOptions.batch_group_by`. Groups are sorted by displayValues
-using this list as a tuple sort key (primary, secondary, ...) — e.g.
-`"article_type,material_type"` shows article types alphabetically with
-materials sorted within each type. Empty/unset values sort last at each level.
-Keying is by raw IDs/values (not display names), so two distinct comodel rows
-sharing a display_name never collapse into one group.
+`this.props.crudOptions.batch_group_by`. Group order tracks each group's
+**oldest** record (first occurrence) in the underlying list: a draft that
+introduces a brand-new combination lands at the bottom (its first record was
+just appended), while a draft that merges into an existing group keeps that
+group anchored at its original position — the freshly-cloned siblings join
+silently, no reshuffle. Keying is by raw IDs/values (not display names), so
+two distinct comodel rows sharing a display_name never collapse into one
+group.
 
 ---
 

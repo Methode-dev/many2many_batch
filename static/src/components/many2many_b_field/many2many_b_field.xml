@@ -8,7 +8,7 @@
              Only shown when batch_group_by is configured on the field.
              Hidden entirely when the widget falls back to plain many2many.
         ─────────────────────────────────────────────────────────────── -->
-        <div t-if="hasBatchMode" class="o_many2many_b_toggle mb-2">
+        <div t-if="hasBatchMode" class="o_many2many_b_toggle mb-4">
             <div class="btn-group o_many2many_b_btn_group" role="group" aria-label="View mode">
                 <button type="button"
                         class="btn btn-sm o_many2many_b_pill"
