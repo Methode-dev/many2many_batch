@@ -120,6 +120,11 @@ export class BatchRenderer extends Component {
     // -------------------------------------------------------------------------
 
     _ensureRecordsEditable() {
+        // Only in an editable batch view.  In readonly consumers the records
+        // must stay in their natural (readonly) mode — flipping them to edit
+        // would leave stale in-edition rows behind on unmount and serves no
+        // purpose since the inline <Field> cells render readonly anyway.
+        if (this.props.readonly) return;
         for (const record of this.props.records) {
             if (record && !record.isInEdition && typeof record.switchMode === "function") {
                 record.switchMode("edit");
@@ -128,8 +133,15 @@ export class BatchRenderer extends Component {
     }
 
     _restoreRecordsReadonly() {
+        // Switch every in-edition record (including brand-new ones) back to
+        // readonly on unmount.  New records report isInEdition === true unless
+        // their mode is explicitly "readonly" (record.js), so skipping them
+        // would hand several simultaneously-in-edition rows to the stock
+        // editable list in Individual mode — breaking its single-edited-record
+        // invariant (clicking one row kicks another out of edit).  Readonly
+        // mode preserves the new/dirty state, so the records still save.
         for (const record of this.props.records) {
-            if (!record || record.isNew) continue;
+            if (!record) continue;
             if (record.isInEdition && typeof record.switchMode === "function") {
                 record.switchMode("readonly");
             }

@@ -17,7 +17,10 @@
                            widget="many2many_b"
                            options='{"batch_group_by": "brand,model", "default_mode": "batch"}'
                            string="Items">
-                        <list>
+                        <!-- editable="bottom" so Individual mode edits inline —
+                             this is what exercises the stock list's edit/abandon
+                             path that the batch→individual regression tour checks. -->
+                        <list editable="bottom" create="1" delete="1">
                             <field name="brand"/>
                             <field name="model"/>
                             <field name="plate"/>

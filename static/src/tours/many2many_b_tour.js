@@ -52,17 +52,17 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
             run: "click",
         },
         {
-            trigger: ".o_many2many_b_pending_row [data-field='brand']",
+            trigger: ".o_many2many_b_pending_row [name='brand'] input",
             content: "Type Brand = Renault",
             run: "edit Renault",
         },
         {
-            trigger: ".o_many2many_b_pending_row [data-field='model']",
+            trigger: ".o_many2many_b_pending_row [name='model'] input",
             content: "Type Model = Megane",
             run: "edit Megane",
         },
         {
-            trigger: ".o_many2many_b_pending_row [data-field='qty']",
+            trigger: ".o_many2many_b_pending_row .o_many2many_b_qty_input",
             content: "Set Qty = 2",
             run: "edit 2",
         },
@@ -87,17 +87,17 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
             run: "click",
         },
         {
-            trigger: ".o_many2many_b_pending_row [data-field='brand']",
+            trigger: ".o_many2many_b_pending_row [name='brand'] input",
             content: "Type Brand = Peugeot",
             run: "edit Peugeot",
         },
         {
-            trigger: ".o_many2many_b_pending_row [data-field='model']",
+            trigger: ".o_many2many_b_pending_row [name='model'] input",
             content: "Type Model = 208",
             run: "edit 208",
         },
         {
-            trigger: ".o_many2many_b_pending_row [data-field='qty']",
+            trigger: ".o_many2many_b_pending_row .o_many2many_b_qty_input",
             content: "Set Qty = 1",
             run: "edit 1",
         },
@@ -211,6 +211,127 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
                 ".o_many2many_b_batch_renderer .o_many2many_b_group_row:only-child " +
                 ".o_many2many_b_qty_value:contains('2')",
             content: "Exactly one group with qty 2 survives the save/reload cycle",
+            auto: true,
+        },
+    ],
+});
+
+/**
+ * Tour: many2many_b_batch_regression
+ *
+ * Regression guard for the batch→individual data-loss bug.
+ *
+ * Batch-created records used to be populated with a raw data write that left
+ * record.dirty === false.  Such a record satisfies Record.canBeAbandoned, so
+ * the stock editable list silently dropped it (and mis-targeted edits to the
+ * first in-edition row) on the first click in Individual mode.  This tour adds
+ * a batch of 4, switches to Individual, then CLICKS a row and edits it — the
+ * exact interaction that triggered the drop — and asserts that all 4 rows
+ * survive and the edit lands on the clicked row.
+ */
+registry.category("web_tour.tours").add("many2many_b_batch_regression", {
+    test: true,
+    url: "/odoo/action-many2many_batch.action_test_batch_parent",
+
+    steps: () => [
+        // Batch mode is the default (default_mode="batch").
+        {
+            trigger: ".o_many2many_b_batch_renderer",
+            content: "Batch renderer visible on load",
+            auto: true,
+        },
+
+        // ── Add a batch of 4 (Renault / Megane) ──────────────────────────────
+        {
+            trigger: ".o_many2many_b_btn_add_line",
+            content: "Open a pending row",
+            run: "click",
+        },
+        {
+            trigger: ".o_many2many_b_pending_row [name='brand'] input",
+            content: "Brand = Renault",
+            run: "edit Renault",
+        },
+        {
+            trigger: ".o_many2many_b_pending_row [name='model'] input",
+            content: "Model = Megane",
+            run: "edit Megane",
+        },
+        {
+            trigger: ".o_many2many_b_pending_row .o_many2many_b_qty_input",
+            content: "Qty = 4",
+            run: "edit 4",
+        },
+        {
+            trigger: ".o_many2many_b_pending_row .btn-success",
+            content: "Confirm the batch of 4",
+            run: "click",
+        },
+        {
+            trigger: ".o_many2many_b_group_row:only-child .o_many2many_b_qty_value:contains('4')",
+            content: "One group of qty 4",
+            auto: true,
+        },
+
+        // ── Switch to Individual mode ────────────────────────────────────────
+        {
+            trigger: ".o_many2many_b_toggle [data-mode='individual']",
+            content: "Switch to Individual mode",
+            run: "click",
+        },
+        {
+            // 4 records must be present right after the switch.
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(4)",
+            content: "All 4 rows present after the switch",
+            auto: true,
+        },
+
+        // ── The regression: click into row 3 and edit it ─────────────────────
+        // With the bug, this first click abandons a non-dirty clone (dropping a
+        // row) and/or routes the edit to the wrong row.
+        {
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3) [name='plate']",
+            content: "Click row 3's plate cell to edit it",
+            run: "click",
+        },
+        {
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3) [name='plate'] input",
+            content: "Type a distinctive plate into row 3",
+            run: "edit ROW3PLATE",
+        },
+        {
+            // Commit row 3's edit by clicking row 1.
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(1) [name='plate']",
+            content: "Click row 1 to leave row 3's edit",
+            run: "click",
+        },
+        {
+            // Still 4 rows — nothing was abandoned by the clicks (fails at ≤3 with the bug).
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(4)",
+            content: "Still 4 rows after editing (no rows dropped)",
+            auto: true,
+        },
+        {
+            // The edit landed on the row we clicked, not a mis-targeted one.
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3) [name='plate']:contains('ROW3PLATE')",
+            content: "Row 3 carries the value we typed into it",
+            auto: true,
+        },
+
+        // ── Save + reload persistence ────────────────────────────────────────
+        {
+            trigger: ".o_form_button_save",
+            content: "Save",
+            run: "click",
+        },
+        {
+            trigger: ".o_form_view:not(.o_form_dirty)",
+            content: "Saved successfully",
+            auto: true,
+        },
+        {
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(4)",
+            content: "All 4 rows survive the save/reload cycle",
             auto: true,
         },
     ],

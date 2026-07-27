@@ -5,7 +5,7 @@ import { makeContext } from "@web/core/context";
 import { registry } from "@web/core/registry";
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
 import { BatchRenderer } from "../many2many_b_batch_renderer/batch_renderer";
-import { dbg, dbgErr, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
+import { dbg, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
 
 /**
  * Many2manyB — a One2many/Many2many widget with two view modes:
@@ -150,13 +150,13 @@ export class Many2ManyBField extends X2ManyField {
                 )
             );
             dbg("STEP 1  addNewRecord ×", delta, "done:", newRecords.map((r) => snap(r, this.groupByFields)));
-            // Apply field values synchronously — no RPC, no extra renders.
-            // Runs before OWL flushes so every record lands in the right group
-            // on the very first render after the await.
+            // Stamp the group-by values and mark each new record dirty (see
+            // _applyFieldValues) so it groups correctly AND survives the handoff
+            // to the stock editable list in Individual mode.
             for (const r of newRecords) {
-                if (r) this._applyFieldValuesDirect(r, group.fieldValues);
+                if (r) this._applyFieldValues(r, group.fieldValues);
             }
-            dbg("STEP 2  _applyFieldValuesDirect done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
+            dbg("STEP 2  _applyFieldValues done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
             dbgGroupEnd();
             return;
         }
@@ -217,9 +217,9 @@ export class Many2ManyBField extends X2ManyField {
         );
         dbg("STEP 1  addNewRecord ×", qty - 1, "done:", newRecords.map((r) => snap(r, this.groupByFields)));
         for (const r of newRecords) {
-            if (r) this._applyFieldValuesDirect(r, fieldValues);
+            if (r) this._applyFieldValues(r, fieldValues);
         }
-        dbg("STEP 2  _applyFieldValuesDirect done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
+        dbg("STEP 2  _applyFieldValues done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
         dbgGroupEnd();
     }
 
@@ -229,25 +229,27 @@ export class Many2ManyBField extends X2ManyField {
     }
 
     /**
-     * Synchronously stamp fieldValues onto a brand-new record (isNew=true).
+     * Stamp the group-by values onto a freshly-created record and mark it dirty.
      *
-     * Why synchronous?  addNewRecord returns after its default_get RPC but
-     * before OWL flushes its render queue.  By writing record.data and
-     * record._changes here — still inside the same microtask — every new
-     * record already carries the right group-by values when OWL renders for
-     * the first time.  The result is a single clean render instead of:
-     *   render-with-null-values → await onchange RPC → render-with-real-values
+     * Values are written straight to record.data / record._changes.  The record
+     * was just created by addNewRecord with these same values seeded from the
+     * default_<field> context, so this is a synchronous, RPC-free confirmation
+     * that keeps every clone in the right group on the very first render.
      *
-     * We write both data (display) and _changes (save payload).  For new
-     * records the two share the same reactive object in Odoo 19, so one write
-     * covers both; the explicit _changes write is a belt-and-suspenders guard
-     * for cases where they diverge (e.g. after a recompute).
+     * The load-bearing line is `record.dirty = true`.  Without it a new record
+     * has dirty === false and _manuallyAdded === true, which satisfies
+     * Record.canBeAbandoned — so Odoo's stock editable list silently drops the
+     * record (via _abandonRecords in leaveEditMode) on the first click in
+     * Individual mode, and mis-targets edits to the first in-edition row.
      *
-     * The context passed to addNewRecord still carries default_<field> keys so
-     * the server receives the right values on save even if _changes is ever
-     * recomputed from scratch.
+     * Why not route through record.update()?  update() sets this flag itself,
+     * but calling it on a brand-new addNewRecord datapoint (with Many2one group-by
+     * values) fires a per-record onchange cascade that throws inside Odoo's change
+     * preprocessors (`_preprocessMany2oneChanges` etc.).  Setting the flag directly
+     * reaches the same end state for the abandonment check without that cascade —
+     * and it mirrors how Odoo's own static_list sets `record.dirty` directly.
      */
-    _applyFieldValuesDirect(record, fieldValues) {
+    _applyFieldValues(record, fieldValues) {
         for (const [f, v] of Object.entries(fieldValues)) {
             if (v === false || v === null || v === undefined || v === "") continue;
             record.data[f] = v;
@@ -255,29 +257,7 @@ export class Many2ManyBField extends X2ManyField {
                 record._changes[f] = v;
             }
         }
-    }
-
-    /**
-     * Explicitly write fieldValues onto a freshly-created record.
-     * Only writes fields whose value is set (not false/null/undefined/empty).
-     * This ensures the new record's data and _changes are both written so that
-     * it joins the correct batch group immediately and survives validation.
-     */
-    async _applyFieldValues(record, fieldValues) {
-        const updates = Object.fromEntries(
-            Object.entries(fieldValues).filter(
-                ([, v]) => v !== false && v !== null && v !== undefined && v !== ""
-            )
-        );
-        if (!Object.keys(updates).length) {
-            dbg("_applyFieldValues: nothing to write (all values are falsy)");
-            return;
-        }
-        try {
-            await record.update(updates);
-        } catch (err) {
-            dbgErr("_applyFieldValues: record.update() failed on #" + record.id, err, updates);
-        }
+        record.dirty = true;
     }
 
     /**

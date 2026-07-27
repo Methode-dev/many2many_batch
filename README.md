@@ -229,7 +229,7 @@ and flat views even in readonly.
 
 Grouping is **100% client-side** — no extra RPC, no intermediate model.
 
-The `groupRecords(records, groupByFields)` utility builds a stable key:
+The `BatchRenderer.groups` getter builds a stable key per record:
 
 ```js
 // For a record { brand: "Toyota", model: "Corolla", plate: "AB-123" }
@@ -258,14 +258,14 @@ Many2ManyBField (extends X2ManyField)
 │
 └── [batch mode]
       └─ <BatchRenderer>
-           ├── groupRecords() — pure function, no side-effects
+           ├── groups getter — client-side grouping, no side-effects
            ├── Existing groups  → [−] qty [+]   🗑
            ├── Pending rows     → text inputs + ✓ / ✕
-           └── Add a line       → addPendingRow()
+           └── Add a line       → addDraft()
 
 StaticList (Odoo internal)
-  ├── addNew({ context })   ← called by onQtyChange (delta > 0)
-  └── delete(record)        ← called by onQtyChange (delta < 0 or "remove_all")
+  ├── addNewRecord({ context })  ← called by onQtyChange (delta > 0) / onCloneDraft
+  └── delete(record)             ← called by onQtyChange (delta < 0 or "remove_all")
 ```
 
 ---
@@ -274,23 +274,21 @@ StaticList (Odoo internal)
 
 ```
 many2many_batch/
-├── __manifest__.py
+├── __manifest__.py                         # assets declared inline (no views/assets.xml)
 ├── models/
 │   └── test_models.py                      # fixture models for the tour
 ├── views/
 │   └── test_form_view.xml                  # fixture form view + action
+├── tests/                                  # HttpCase tour tests
 └── static/src/
     ├── index.js                            # field registration
+    ├── tours/                              # browser tours (web.assets_tests bundle)
     ├── utils/
-    │   └── group_records.js               # pure grouping utility
+    │   └── debug.js                        # namespaced console logging (M2M_DEBUG)
     └── components/
-        ├── many2many_b_field/
-        │   ├── many2many_b_field.js        # main OWL component + qty logic
-        │   ├── many2many_b_field.xml       # pill toggle + mode routing
-        │   └── many2many_b_field.scss      # pill + table styles
-        └── many2many_b_batch_renderer/
-            ├── batch_renderer.js           # grouped table component
-            └── batch_renderer.xml          # table template
+        ├── many2many_b_field/              # main OWL component + qty logic (.js/.xml/.scss)
+        ├── many2many_b_batch_renderer/     # grouped table component (.js/.xml/.scss)
+        └── group_by_cell/                  # <Field> wrapper with domain forwarding (.js/.xml)
 ```
 
 ---

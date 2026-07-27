@@ -1,6 +1,8 @@
 {
     "name": "Many2many Batch",
     "version": "19.0.1.0.0",
+    "author": "Méthode",
+    "website": "https://methode.dev/",
     "summary": "Generic Many2many field with individual / batch (group-by + qty) entry modes",
     "description": """
         Adds the ``many2many_b`` field widget.
