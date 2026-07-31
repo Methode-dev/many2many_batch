@@ -22,6 +22,7 @@ many2many_batch/
     └── components/
         ├── many2many_b_field/            # main OWL component (.js / .xml / .scss)
         ├── many2many_b_batch_renderer/   # grouped-table sub-component (.js / .xml / .scss)
+        ├── records_table_dialog/         # whole list as one wide table, on row click (.js / .xml / .scss)
         └── group_by_cell/                # <Field> wrapper with domain forwarding (.js / .xml)
 ```
 
@@ -58,6 +59,47 @@ satisfy mandatory fields that are not part of `batch_group_by` and that have no
 server-side default (e.g. `odometer_unit` on `fleet.vehicle`).
 Group-by field values always override `default_values` when the same field appears
 in both.
+
+### `table_dialog` — open the whole list as one wide table
+
+```xml
+<field name="seafarer_ids" widget="many2many_b"
+       options='{"batch_group_by": "nationality_id",
+                 "table_dialog_size": "fs",
+                 "table_dialog": "nationality_id, visa_situation_id:VISA, passport_number:Ppt n°"}'>
+    <list>
+        <field name="nationality_id"/>
+        <field name="visa_situation_id"/>
+        <field name="passport_number" column_invisible="1"/>
+    </list>
+</field>
+```
+
+Clicking any row in **individual** mode then opens `RecordsTableDialog`: the whole
+list as one wide table of those columns, with the clicked row highlighted and
+scrolled into view — instead of the clicked record alone in the comodel's form
+view. The compact list stays the overview; the dialog is where the full data set is
+read and completed.
+
+| Option | Meaning |
+|---|---|
+| `table_dialog` | Comma-separated, **ordered** field names. `field:Custom header` overrides that column's label. Empty/absent → stock form dialog. |
+| `table_dialog_size` | Dialog size: `sm` / `md` / `lg` / `xl` / `fs`. Default `xl`; use `fs` past ~8 columns. |
+| `table_dialog_title` | Dialog title. Defaults to the field's own label. |
+
+- Cells are ordinary `<Field>` widgets (through `GroupByCell`, so many2one domains
+  and the `allowed_<field>_ids` convention work), **editable** when the parent
+  field is not readonly, and saved with the parent form.
+- Every `table_dialog` field must be loaded by the sub-view — declare it as a
+  `<list>` column, with `column_invisible="1"` to keep it out of the list itself.
+  A column that is not loaded is skipped rather than crashing the dialog.
+- Only fires where Odoo itself opens a record, i.e. when the sub-list is **not**
+  `editable` (`X2ManyField.canOpenRecord`); an editable list keeps editing inline.
+- Records load in readonly mode, so the dialog flips them to edit for its lifetime
+  and restores exactly those it touched on close — the list renderer allows only
+  one in-edition row.
+- Headers are sticky and the table scrolls inside the dialog, so a long crew list
+  never pushes the footer off-screen.
 
 > **⚠️ Odoo 19 prop pipeline (critical):**
 > ```
@@ -115,16 +157,16 @@ get groups()
 
 ---
 
-## Phase 1 scope (implement now)
+## Phase 1 scope (shipped)
 
 - [x] Module scaffold (`__manifest__`, assets registration)
-- [ ] `Many2ManyBField` OWL component with mode toggle pills
-- [ ] `BatchRenderer` with grouped table (qty | field… | actions)
+- [x] `Many2ManyBField` OWL component with mode toggle pills
+- [x] `BatchRenderer` with grouped table (field… | qty | actions)
 - [x] Client-side grouping (`BatchRenderer.groups` getter)
-- [ ] Qty `[+]` / `[−]` / `[✕]` controls wired to `StaticList.addNew()` / `.delete()`
-- [ ] Silent record creation with `batch_group_by` fields pre-filled
-- [ ] Readonly mode: hide all edit controls
-- [ ] SCSS: pill toggle, batch table, "Undefined" cell placeholder style
+- [x] Qty `[+]` / `[−]` / `[🗑]` controls wired to `StaticList.addNewRecord()` / `.delete()`
+- [x] Draft rows ("Add a line" → group-by cells + qty, confirm clones the draft)
+- [x] Readonly mode: hide all edit controls
+- [x] SCSS: pill toggle, batch table, merge-flash animation
 
 ---
 
@@ -202,37 +244,25 @@ get groups()
 - Asset bundle: `web.assets_backend`, declared inline in `__manifest__.py` (there is no `views/assets.xml`); tours ship in `web.assets_tests`
 - OWL component registration: `registry.category("fields").add("many2many_b", many2ManyBField)`
 
-### Sub-view must declare the item field for [+]/[−] to work
+### Group-by fields must be columns of the sub-view
 
-The widget's `[+]`/`[−]` buttons rely on the nested item `StaticList`, which is
-only loaded when the item field is declared in the sub-view (otherwise it's not
-in `activeFields`).  Use `column_invisible="1"` to keep the field in
-`activeFields` without showing a column:
-
-```xml
-<record id="fleet_batch_line_view_list" model="ir.ui.view">
-    <field name="model">fleet.batch.line</field>
-    <field name="arch" type="xml">
-        <list>
-            <field name="state_id"/>
-            <field name="qty"/>
-            <field name="vehicle_ids" column_invisible="1"/>  <!-- enables [+]/[−] -->
-        </list>
-    </field>
-</record>
-```
-
-`BatchRenderer.getItemList(batchLine)` returns null when the item field is not
-loaded, and `canEditItems(batchLine)` disables the buttons (with a tooltip).
+`BatchRenderer` renders each group-by cell with Odoo's `<Field>` on
+`group.records[0]`, so the field must be in the sub-view's `activeFields` —
+i.e. declared as a `<list>` column. A `batch_group_by` entry that is not a
+column falls back to a muted "—" cell (`props.fields[fieldName]` is undefined).
+Use `column_invisible="1"` to keep a field in `activeFields` without showing it
+in Individual mode.
 
 ---
 
 ## Known limitations (phase 1, by design)
 
 - Grouping is 100% client-side; not suitable for M2M with thousands of records
-- Mode resets to `individual` on every form load
-- `batch_group_by` fields must be stored (non-computed) writable fields on the comodel
+- Mode resets to `default_mode` on every form load (no persistence)
+- `batch_group_by` fields must be stored (non-computed) writable fields on the
+  comodel, and must be columns of the sub-view (see above)
 - No aggregation columns beyond the count
 - Drag-to-reorder not available
-- `[+]`/`[−]` buttons are disabled when the sub-view doesn't declare the item
-  field (`item_field` option) — see "Sub-view must declare the item field" above
+- `[−]` is disabled once any record in the group carries data outside the
+  group-by / `default_values` fields (`isAllRecordsVirgin`): removing a specific
+  one is an Individual-mode operation

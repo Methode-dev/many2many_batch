@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="many2many_batch.RecordsTableDialog">
+    <Dialog size="props.size or 'xl'"
+            title="props.title or 'Details'"
+            contentClass="'o_m2m_b_table_dialog'">
+        <!-- The table scrolls inside the dialog rather than stretching it, so a
+             long column list never pushes the buttons off-screen. -->
+        <div class="o_m2m_b_table_scroll" t-ref="root">
+            <table class="o_m2m_b_full_table table table-sm table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th t-foreach="columns" t-as="column" t-key="column.name">
+                            <t t-esc="label(column)"/>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr t-foreach="props.records" t-as="record" t-key="record.id"
+                        t-att-class="{ 'o_m2m_b_table_active_row': isActive(record) }">
+                        <td t-foreach="columns" t-as="column" t-key="column.name"
+                            class="align-middle">
+                            <GroupByCell record="record"
+                                         name="column.name"
+                                         readonly="props.readonly"/>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <t t-set-slot="footer">
+            <button class="btn btn-primary" t-on-click="() => props.close()">
+                Close
+            </button>
+        </t>
+    </Dialog>
+</t>
+
+</templates>

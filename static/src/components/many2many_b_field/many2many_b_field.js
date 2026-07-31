@@ -3,8 +3,10 @@
 import { useState } from "@odoo/owl";
 import { makeContext } from "@web/core/context";
 import { registry } from "@web/core/registry";
+import { useService } from "@web/core/utils/hooks";
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
 import { BatchRenderer } from "../many2many_b_batch_renderer/batch_renderer";
+import { RecordsTableDialog } from "../records_table_dialog/records_table_dialog";
 import { dbg, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
 
 /**
@@ -30,6 +32,18 @@ import { dbg, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
  *                     default_<field> context keys when creating new items.
  *                     Used for mandatory fields that are not group-by fields
  *                     (e.g. odometer_unit on fleet.vehicle).
+ *   table_dialog    : comma-separated, ordered field names. Opening a row in
+ *                     individual mode then shows the WHOLE list as one wide
+ *                     table of those columns (RecordsTableDialog) instead of the
+ *                     clicked record in the comodel's form view; the clicked row
+ *                     is highlighted. A column may carry its own header:
+ *                     "visa_situation_id:VISA".
+ *   table_dialog_size : Dialog size — "sm" | "md" | "lg" | "xl" | "fs".
+ *                     Defaults to "xl"; use "fs" for long column lists.
+ *   table_dialog_title: Dialog title.
+ *
+ * Fields listed in table_dialog must be loaded by the sub-view, i.e. declared as
+ * <list> columns — add column_invisible="1" to keep one out of the list itself.
  */
 export class Many2ManyBField extends X2ManyField {
     static template = "many2many_batch.Many2ManyBField";
@@ -40,6 +54,7 @@ export class Many2ManyBField extends X2ManyField {
 
     setup() {
         super.setup();
+        this.dialogService = useService("dialog");
         const defaultMode =
             this.props.crudOptions?.default_mode === "batch" ? "batch" : "individual";
         this.batchState = useState({ mode: defaultMode });
@@ -73,12 +88,56 @@ export class Many2ManyBField extends X2ManyField {
         return [...this.groupByFields, ...staticKeys];
     }
 
+    /**
+     * Parsed `table_dialog` option: [{ name, label }] in the configured order.
+     * "visa_situation_id:VISA" overrides that column's header.
+     */
+    get tableDialogColumns() {
+        const raw = this.props.crudOptions?.table_dialog || "";
+        return raw
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+            .map((entry) => {
+                const [name, ...label] = entry.split(":");
+                return { name: name.trim(), label: label.join(":").trim() || null };
+            });
+    }
+
     // -------------------------------------------------------------------------
     // Mode switching
     // -------------------------------------------------------------------------
 
     setMode(mode) {
         this.batchState.mode = mode;
+    }
+
+    // -------------------------------------------------------------------------
+    // Opening a row
+    // -------------------------------------------------------------------------
+
+    /**
+     * Show the whole list as one wide table when `table_dialog` is configured,
+     * with the clicked record highlighted; otherwise fall back to the stock
+     * form-view dialog for that record alone.
+     */
+    async openRecord(record) {
+        const columns = this.tableDialogColumns;
+        if (!columns.length || !this.canOpenRecord) {
+            return super.openRecord(record);
+        }
+        this.dialogService.add(RecordsTableDialog, {
+            records: this.list.records,
+            activeRecord: record,
+            columns,
+            readonly: this.props.readonly,
+            size: this.props.crudOptions?.table_dialog_size,
+            // Falls back to the field's own label, so the dialog is titled after
+            // what the user clicked ("Crew Members").
+            title:
+                this.props.crudOptions?.table_dialog_title ||
+                this.props.record.fields[this.props.name]?.string,
+        });
     }
 
     // -------------------------------------------------------------------------
