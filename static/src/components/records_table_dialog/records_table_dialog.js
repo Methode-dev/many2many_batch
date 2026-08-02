@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillUnmount, useRef } from "@odoo/owl";
+import { Component, onMounted, onWillStart, onWillUnmount, useRef } from "@odoo/owl";
 import { Dialog } from "@web/core/dialog/dialog";
 import { _t } from "@web/core/l10n/translation";
 import { useService } from "@web/core/utils/hooks";
@@ -39,9 +39,12 @@ export class RecordsTableDialog extends Component {
         // waiting for the parent form to be saved (see onCellChanged).
         autosave: { type: Boolean, optional: true },
         // Name of a method on the rows' own model returning an action. When set,
-        // a trailing column shows a button per row that runs it — the way to
-        // reach whatever the row's columns only mirror (see onEditRow).
+        // a button per row runs it — the way to reach whatever the row's columns
+        // only mirror (see onEditRow).
         editAction: { type: String, optional: true },
+        // Which column hosts that button, as an arrow beside the value. Without
+        // it the button sits in a trailing column of its own.
+        editColumn: { type: String, optional: true },
         size: { type: String, optional: true },
         title: { type: String, optional: true },
         close: { type: Function },
@@ -69,18 +72,31 @@ export class RecordsTableDialog extends Component {
         // request still goes out, and saving does not depend on the component.
         onWillUnmount(() => this.flush());
         // Records loaded from the database sit in "readonly" mode, which makes
-        // <Field> render static text. Flip them for the dialog's lifetime and put
-        // back exactly the ones we touched, so we never hand a stack of
-        // in-edition rows to the list renderer (it allows only one).
+        // <Field> render static text (Field ORs its readonly with
+        // !record.isInEdition). Flip them for the dialog's lifetime and put back
+        // exactly the ones we touched, so we never hand a stack of in-edition rows
+        // to the list renderer (it allows only one).
+        //
+        // Awaited in onWillStart, before the first render: switchMode() queues on
+        // the model's mutex, so firing it here and rendering immediately was a
+        // race. Whenever the mutex happened to be busy — the crew wizard's list is
+        // a computed field, so opening it usually coincides with model work — the
+        // flip landed after the first render, and the records are reactive objects
+        // belonging to the parent form's render context, so the mode change did not
+        // necessarily re-render this dialog: every cell then stayed read-only for
+        // good. That is what made the columns impossible to edit.
         this.flipped = [];
-        if (!this.props.readonly) {
-            for (const record of this.props.records) {
-                if (record && !record.isInEdition && typeof record.switchMode === "function") {
-                    record.switchMode("edit");
-                    this.flipped.push(record);
-                }
+        onWillStart(async () => {
+            if (this.props.readonly) {
+                return;
             }
-        }
+            const toFlip = this.props.records.filter(
+                (record) =>
+                    record && !record.isInEdition && typeof record.switchMode === "function"
+            );
+            await Promise.all(toFlip.map((record) => record.switchMode("edit")));
+            this.flipped = toFlip;
+        });
         onWillUnmount(() => {
             for (const record of this.flipped) {
                 if (record.isInEdition && typeof record.switchMode === "function") {
@@ -119,6 +135,16 @@ export class RecordsTableDialog extends Component {
 
     get canEdit() {
         return Boolean(this.props.editAction);
+    }
+
+    /** True when the row action lives in `column` rather than in its own column. */
+    editsFrom(column) {
+        return this.canEdit && this.props.editColumn === column.name;
+    }
+
+    /** True when no column hosts the row action, so it needs one of its own. */
+    get hasEditColumn() {
+        return this.canEdit && !this.props.editColumn;
     }
 
     /**

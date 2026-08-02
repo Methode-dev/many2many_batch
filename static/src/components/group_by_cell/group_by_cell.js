@@ -3,6 +3,7 @@
 import { Component } from "@odoo/owl";
 import { Field } from "@web/views/fields/field";
 import { Domain } from "@web/core/domain";
+import { evaluateBooleanExpr } from "@web/core/py_js/py";
 import { useRecordObserver } from "@web/model/relational_model/utils";
 
 /**
@@ -84,10 +85,34 @@ export class GroupByCell extends Component {
         return props;
     }
 
+    /**
+     * Whether the field itself refuses to be written, as opposed to the host
+     * asking for a read-only cell.
+     *
+     * <Field> only applies a field's own readonly when it is handed a fieldInfo,
+     * which this component does not do — so without this, a computed field with no
+     * inverse (a crew line's full name, built from the contact's name parts)
+     * rendered as an editable input whose value had nowhere to go. Mirrors what
+     * Field does with a fieldInfo: evaluate the arch modifier, which
+     * Field.parseFieldNode already seeds from the model's own readonly flag; the
+     * descriptor is the fallback when a column has no arch entry at all.
+     */
+    fieldIsReadonly(record, name) {
+        const modifier = record.activeFields?.[name]?.readonly;
+        if (modifier !== undefined && modifier !== null) {
+            return evaluateBooleanExpr(modifier, record.evalContextWithVirtualIds);
+        }
+        return Boolean(record.fields?.[name]?.readonly);
+    }
+
     get fieldProps() {
         const record = this.props.record;
         const name = this.props.name;
-        const base = { record, name, readonly: this.props.readonly };
+        const base = {
+            record,
+            name,
+            readonly: Boolean(this.props.readonly) || this.fieldIsReadonly(record, name),
+        };
 
         const fieldType = record.fields?.[name]?.type;
         if (fieldType !== "many2one") {

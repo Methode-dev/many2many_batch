@@ -141,6 +141,7 @@ export class Many2ManyBField extends X2ManyField {
             readonly: this.props.readonly,
             autosave: Boolean(this.props.crudOptions?.table_dialog_autosave),
             editAction: this.props.crudOptions?.table_dialog_edit_action || undefined,
+            editColumn: this.props.crudOptions?.table_dialog_edit_column || undefined,
             size: this.props.crudOptions?.table_dialog_size,
             // Falls back to the field's own label, so the dialog is titled after
             // what the user clicked ("Crew Members").

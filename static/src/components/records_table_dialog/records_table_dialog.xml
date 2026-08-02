@@ -14,8 +14,9 @@
                         <th t-foreach="columns" t-as="column" t-key="column.name">
                             <t t-esc="label(column)"/>
                         </th>
-                        <!-- Row action, pinned to the right edge (see the scss). -->
-                        <th t-if="canEdit" class="o_m2m_b_row_action"/>
+                        <!-- Row action in a column of its own, pinned to the right
+                             edge (see the scss) — only when no column hosts it. -->
+                        <th t-if="hasEditColumn" class="o_m2m_b_row_action"/>
                     </tr>
                 </thead>
                 <tbody>
@@ -23,12 +24,27 @@
                         t-att-class="{ 'o_m2m_b_table_active_row': isActive(record) }">
                         <td t-foreach="columns" t-as="column" t-key="column.name"
                             class="align-middle">
-                            <GroupByCell record="record"
+                            <div t-if="editsFrom(column)" class="o_m2m_b_cell_with_action">
+                                <GroupByCell record="record"
+                                             name="column.name"
+                                             readonly="props.readonly"
+                                             onChanged="canAutoSave ? onCellChanged : undefined"/>
+                                <!-- Same affordance Odoo puts on a many2one: an
+                                     arrow through to the record that owns this
+                                     value. -->
+                                <button class="btn btn-link btn-sm px-1 py-0 o_m2m_b_cell_action"
+                                        t-on-click="() => this.onEditRow(record)"
+                                        title="Open the record this value belongs to">
+                                    <i class="oi oi-arrow-right"/>
+                                </button>
+                            </div>
+                            <GroupByCell t-else=""
+                                         record="record"
                                          name="column.name"
                                          readonly="props.readonly"
                                          onChanged="canAutoSave ? onCellChanged : undefined"/>
                         </td>
-                        <td t-if="canEdit" class="o_m2m_b_row_action align-middle">
+                        <td t-if="hasEditColumn" class="o_m2m_b_row_action align-middle">
                             <button class="btn btn-link btn-sm py-0"
                                     t-on-click="() => this.onEditRow(record)"
                                     title="Open this record's own form to edit its details">
