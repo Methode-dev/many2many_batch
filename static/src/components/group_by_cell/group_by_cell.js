@@ -58,6 +58,32 @@ export class GroupByCell extends Component {
         });
     }
 
+    /**
+     * The subset of many2one props that come from `options="{...}"` on the field,
+     * mapped the same way extractM2OFieldProps does (web/.../many2one_field.js).
+     * Only the keys actually set are returned, so the widget keeps its defaults
+     * for the rest.
+     */
+    many2oneOptionProps(record, name) {
+        const options = record.activeFields?.[name]?.options || {};
+        const props = {};
+        if (options.no_open) {
+            props.canOpen = false;
+        }
+        if (options.no_create) {
+            props.canCreate = false;
+            props.canCreateEdit = false;
+            props.canQuickCreate = false;
+        }
+        if (options.no_create_edit) {
+            props.canCreateEdit = false;
+        }
+        if (options.no_quick_create) {
+            props.canQuickCreate = false;
+        }
+        return props;
+    }
+
     get fieldProps() {
         const record = this.props.record;
         const name = this.props.name;
@@ -67,6 +93,12 @@ export class GroupByCell extends Component {
         if (fieldType !== "many2one") {
             return base;
         }
+        // Apply the sub-view's own many2one options. This component renders <Field>
+        // without a fieldInfo, so extractM2OFieldProps never runs and the widget
+        // falls back to its permissive defaults (canOpen / canCreateEdit /
+        // canQuickCreate all true) — meaning options like no_open, set on the list
+        // column, were silently ignored here while being honoured everywhere else.
+        Object.assign(base, this.many2oneOptionProps(record, name));
 
         // Primary path: domain stored in activeFields (Odoo <19 / future versions).
         const domainExpr = record.activeFields?.[name]?.domain;

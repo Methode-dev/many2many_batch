@@ -14,6 +14,8 @@
                         <th t-foreach="columns" t-as="column" t-key="column.name">
                             <t t-esc="label(column)"/>
                         </th>
+                        <!-- Row action, pinned to the right edge (see the scss). -->
+                        <th t-if="canEdit" class="o_m2m_b_row_action"/>
                     </tr>
                 </thead>
                 <tbody>
@@ -25,6 +27,13 @@
                                          name="column.name"
                                          readonly="props.readonly"
                                          onChanged="canAutoSave ? onCellChanged : undefined"/>
+                        </td>
+                        <td t-if="canEdit" class="o_m2m_b_row_action align-middle">
+                            <button class="btn btn-link btn-sm py-0"
+                                    t-on-click="() => this.onEditRow(record)"
+                                    title="Open this record's own form to edit its details">
+                                <i class="fa fa-pencil"/>
+                            </button>
                         </td>
                     </tr>
                 </tbody>

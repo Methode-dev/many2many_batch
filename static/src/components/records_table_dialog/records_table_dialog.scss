@@ -56,5 +56,25 @@
         .o_field_datetime input {
             min-width: 7.5rem;
         }
+
+        // Row action column: pinned to the right edge so the button stays in reach
+        // however far the table is scrolled sideways — with 14 columns it would
+        // otherwise be the one thing you have to hunt for.
+        th.o_m2m_b_row_action,
+        td.o_m2m_b_row_action {
+            position: sticky;
+            right: 0;
+            width: 2.75rem;
+            min-width: 2.75rem;
+            text-align: center;
+            padding-left: 0;
+            padding-right: 0;
+            background: var(--o-view-background-color, #fff);
+            // Above the other cells, and above the sticky header row it crosses.
+            z-index: 2;
+        }
+        th.o_m2m_b_row_action {
+            z-index: 3;
+        }
     }
 }

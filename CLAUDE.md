@@ -87,6 +87,29 @@ read and completed.
 | `table_dialog_size` | Dialog size: `sm` / `md` / `lg` / `xl` / `fs`. Default `xl`; use `fs` past ~8 columns. |
 | `table_dialog_title` | Dialog title. Defaults to the field's own label. |
 | `table_dialog_autosave` | `True` → each row is written to the database shortly after one of its cells changes, instead of waiting for the parent form to be saved. Off by default. |
+| `table_dialog_edit_action` | Method name on the related model returning an action. Adds a trailing column with one button per row that opens it. Off by default. |
+
+### `table_dialog_edit_action` — a way out to the record that owns the data
+
+Some columns only *mirror* another record: a crew line's name, passport number and
+seaman book are related fields on the seafarer's contact, and the full name is
+computed there, so it cannot be typed into at all. Point the option at a method
+returning an action and the dialog grows a pinned right-hand column whose button
+opens it:
+
+```xml
+options='{"table_dialog": "...", "table_dialog_edit_action": "action_open_seafarer_contact"}'
+```
+
+- Called as `<related model>.<method>(row_id)`; anything falsy is ignored (e.g. the
+  crew line has no contact yet).
+- Pending table edits are flushed **before** the action opens, so the form cannot
+  silently discard a cell that was just typed.
+- On close, only that row is refreshed, with `record.load()` — it refetches the
+  same datapoint in place, whereas reloading the parent would swap out the record
+  objects the open table is rendering.
+- The column is `position: sticky; right: 0`, so the button stays in reach on a
+  table wide enough to scroll sideways.
 
 ### `table_dialog_autosave` — write-through editing
 

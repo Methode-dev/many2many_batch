@@ -45,6 +45,10 @@ import { dbg, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
  *                     changes, instead of waiting for the parent form to be
  *                     saved. Off by default (the parent-transaction behaviour a
  *                     form normally has).
+ *   table_dialog_edit_action : name of a method on the related model returning an
+ *                     action. Adds a trailing column with a button per row that
+ *                     opens it — for the columns that only mirror another
+ *                     record's data, or cannot be edited in place at all.
  *
  * Fields listed in table_dialog must be loaded by the sub-view, i.e. declared as
  * <list> columns — add column_invisible="1" to keep one out of the list itself.
@@ -136,6 +140,7 @@ export class Many2ManyBField extends X2ManyField {
             columns,
             readonly: this.props.readonly,
             autosave: Boolean(this.props.crudOptions?.table_dialog_autosave),
+            editAction: this.props.crudOptions?.table_dialog_edit_action || undefined,
             size: this.props.crudOptions?.table_dialog_size,
             // Falls back to the field's own label, so the dialog is titled after
             // what the user clicked ("Crew Members").

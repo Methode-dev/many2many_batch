@@ -38,6 +38,10 @@ export class RecordsTableDialog extends Component {
         // Write each row through as soon as one of its cells changes, instead of
         // waiting for the parent form to be saved (see onCellChanged).
         autosave: { type: Boolean, optional: true },
+        // Name of a method on the rows' own model returning an action. When set,
+        // a trailing column shows a button per row that runs it — the way to
+        // reach whatever the row's columns only mirror (see onEditRow).
+        editAction: { type: String, optional: true },
         size: { type: String, optional: true },
         title: { type: String, optional: true },
         close: { type: Function },
@@ -46,6 +50,8 @@ export class RecordsTableDialog extends Component {
     setup() {
         this.rootRef = useRef("root");
         this.notification = useService("notification");
+        this.orm = useService("orm");
+        this.action = useService("action");
         // Rows whose save is in flight — see onCellChanged.
         this.saving = new Set();
         // Saving on a short idle rather than on every cell exit keeps typing
@@ -105,6 +111,45 @@ export class RecordsTableDialog extends Component {
 
     isActive(record) {
         return record === this.props.activeRecord;
+    }
+
+    // -------------------------------------------------------------------------
+    // Row action (opt-in through the `table_dialog_edit_action` option)
+    // -------------------------------------------------------------------------
+
+    get canEdit() {
+        return Boolean(this.props.editAction);
+    }
+
+    /**
+     * Run the configured action for one row and open whatever it returns.
+     *
+     * The point of the column: several of the table's cells only *mirror* data
+     * that lives on another record — a crew line's name, passport and seaman book
+     * are related fields on the seafarer's contact — and a couple of them cannot
+     * be edited here at all (a computed full name has nowhere to write). This
+     * button opens the record that owns them, so the table stays the overview and
+     * the form stays the place where the details are completed.
+     */
+    async onEditRow(record) {
+        if (!this.canEdit || !record.resId) {
+            return;
+        }
+        // Persist what is already typed in the table first: the form about to open
+        // edits the same underlying record, so a pending cell must not be lost to
+        // it (no-op when autosave is off — the parent form still holds it).
+        await this.flush();
+        const action = await this.orm.call(record.resModel, this.props.editAction, [record.resId]);
+        if (!action) {
+            return;
+        }
+        await this.action.doAction(action, {
+            // Refresh just this row when the form closes, so the mirrored columns
+            // show what was just changed. Record.load() refetches this very
+            // datapoint in place, which keeps the record objects the open table is
+            // rendering — a parent reload would swap them out from under it.
+            onClose: () => record.load(),
+        });
     }
 
     // -------------------------------------------------------------------------
