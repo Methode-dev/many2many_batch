@@ -86,6 +86,34 @@ read and completed.
 | `table_dialog` | Comma-separated, **ordered** field names. `field:Custom header` overrides that column's label. Empty/absent → stock form dialog. |
 | `table_dialog_size` | Dialog size: `sm` / `md` / `lg` / `xl` / `fs`. Default `xl`; use `fs` past ~8 columns. |
 | `table_dialog_title` | Dialog title. Defaults to the field's own label. |
+| `table_dialog_autosave` | `True` → each row is written to the database shortly after one of its cells changes, instead of waiting for the parent form to be saved. Off by default. |
+
+### `table_dialog_autosave` — write-through editing
+
+With it on, the dialog is a live grid: a cell edit marks its row dirty, and half a
+second of quiet later that row is saved with `record.save({reload: false})` — a
+`web_save` on the comodel record itself, which is the same call Odoo makes for a
+many2many row edited through its own record dialog (`updateRecord` in
+`web/.../relational_utils.js`). Consequences worth knowing:
+
+- It saves **the row, not the parent form**: nothing else pending on the form is
+  written, and it works even when the list is a computed field with no inverse (an
+  operation's crew wizard) — the case where a parent save would drop the change.
+- `reload: false` is required. A reloading save rebuilds the parent's x2many list,
+  swapping out the record objects the open table is rendering.
+- Saving is **debounced and guarded by `record.dirty`**, and never done straight
+  from the cell's change handler. `Record._save()` ends with
+  `this.data = {...this._values}` *even when the changes were empty*, which
+  re-notifies every cell observer of that row; saving from there loops forever, one
+  round per animation frame, each round paying a model-wide `_askChanges()` (one
+  handler per mounted input). That mistake made the table unusable — keep the
+  dirty check and the idle timer.
+- Rows with no `resId` (added but never saved) are skipped: they still go with the
+  parent.
+- A row that is invalid is left dirty and retried on the next edit; a failed save
+  raises a notification instead of throwing out of the field.
+- Closing flushes: the Close button awaits it, and `onWillUnmount` /
+  `execBeforeUnmount` cover ✕ and Escape.
 
 - Cells are ordinary `<Field>` widgets (through `GroupByCell`, so many2one domains
   and the `allowed_<field>_ids` convention work), **editable** when the parent
@@ -93,6 +121,19 @@ read and completed.
 - Every `table_dialog` field must be loaded by the sub-view — declare it as a
   `<list>` column, with `column_invisible="1"` to keep it out of the list itself.
   A column that is not loaded is skipped rather than crashing the dialog.
+- **Many2one columns must use `optional="hide"`, not `column_invisible="1"`.**
+  `extractFieldsFromArchInfo` ORs `column_invisible` into `invisible`
+  (`combineModifiers(null, "1", "OR") === "1"`), and `getFieldsSpec` loads an
+  always-invisible Many2one as `fields: {}` — the id with **no `display_name`**,
+  since nothing was supposed to render it. The dialog renders it anyway, so the
+  cell reads "Unnamed" (the Many2one widget's fallback for a value with no name)
+  while its internal link still opens the right record. Setting a value looks
+  fine — the name comes from the autocomplete — and it only breaks after a
+  reload. `optional="hide"` leaves `invisible` unset, so the name is loaded, and
+  keeps the column out of the list (toggleable from its column menu).
+  Char/Date/Selection columns have no sub-spec and load fine either way; x2many
+  columns used only for their ids (the `allowed_<field>_ids` domain convention)
+  are also fine invisible.
 - Only fires where Odoo itself opens a record, i.e. when the sub-list is **not**
   `editable` (`X2ManyField.canOpenRecord`); an editable list keeps editing inline.
 - Records load in readonly mode, so the dialog flips them to edit for its lifetime

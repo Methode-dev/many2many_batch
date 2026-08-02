@@ -41,6 +41,10 @@ import { dbg, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
  *   table_dialog_size : Dialog size — "sm" | "md" | "lg" | "xl" | "fs".
  *                     Defaults to "xl"; use "fs" for long column lists.
  *   table_dialog_title: Dialog title.
+ *   table_dialog_autosave : write each row through as soon as one of its cells
+ *                     changes, instead of waiting for the parent form to be
+ *                     saved. Off by default (the parent-transaction behaviour a
+ *                     form normally has).
  *
  * Fields listed in table_dialog must be loaded by the sub-view, i.e. declared as
  * <list> columns — add column_invisible="1" to keep one out of the list itself.
@@ -131,6 +135,7 @@ export class Many2ManyBField extends X2ManyField {
             activeRecord: record,
             columns,
             readonly: this.props.readonly,
+            autosave: Boolean(this.props.crudOptions?.table_dialog_autosave),
             size: this.props.crudOptions?.table_dialog_size,
             // Falls back to the field's own label, so the dialog is titled after
             // what the user clicked ("Crew Members").

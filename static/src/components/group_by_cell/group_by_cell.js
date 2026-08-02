@@ -3,6 +3,7 @@
 import { Component } from "@odoo/owl";
 import { Field } from "@web/views/fields/field";
 import { Domain } from "@web/core/domain";
+import { useRecordObserver } from "@web/model/relational_model/utils";
 
 /**
  * Thin wrapper around Odoo's <Field> for a group-by cell in the batch table.
@@ -32,7 +33,30 @@ export class GroupByCell extends Component {
         record: { type: Object },
         name: { type: String },
         readonly: { type: Boolean, optional: true },
+        // Called with the record when THIS cell's value changes (never on the
+        // initial render). The table dialog uses it to write the row through
+        // immediately; batch-table cells leave it unset.
+        onChanged: { type: Function, optional: true },
     };
+
+    setup() {
+        if (!this.props.onChanged) {
+            return;
+        }
+        // useRecordObserver subscribes to whatever its callback reads, so reading
+        // our own field is what narrows this to "this cell changed" instead of
+        // "anything on the row changed". It also fires once on mount, which is
+        // not an edit.
+        let initial = true;
+        useRecordObserver((record) => {
+            void record.data[this.props.name];
+            if (initial) {
+                initial = false;
+                return;
+            }
+            this.props.onChanged(record);
+        });
+    }
 
     get fieldProps() {
         const record = this.props.record;
