@@ -83,6 +83,33 @@ group.
 
 ---
 
+## Adding a line in batch mode (draft rows)
+
+"Add a line" opens a **draft row**: a real new record, kept out of the groups
+until it is left. There is no confirm button. The row commits itself when the
+user leaves it — a click anywhere outside (capture-phase `click` listener),
+Tab out (`focusout`), or Enter — and is dropped when none of its group-by
+fields was filled. Esc or the trash icon discards it. Its qty uses the same
+− / + stepper as a group.
+
+Committing goes through `Many2ManyBField.onSettleDraft`, which runs as **one
+model-mutex job**, and that ordering is load-bearing:
+
+- the edit of the field just left (a Char/Integer input writes on `change`, as
+  focus leaves it) is queued *ahead* of the job, so the draft is read complete;
+- a Save the same click goes on to trigger is queued *behind* it, so it stores
+  all N records, not one.
+
+The N-1 copies (and the records [+] adds) are created and stamped with the
+group's values inside that job, without an onchange (`_createRecordsLike`): a
+creation onchange may default them otherwise — a crew row's nationality
+onchange re-defaults its visa situation — and a Save slipping in between would
+persist the default. It uses `StaticList` internals (`_createNewRecordDatapoint`,
+`_addRecord`, `_applyCommands`, `_onUpdate`) because the public methods take the
+mutex themselves.
+
+---
+
 ## Key OWL component contracts
 
 ### `Many2ManyBField`

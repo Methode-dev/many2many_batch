@@ -21,10 +21,11 @@ class TestMany2ManyBWidgetTour(HttpCase):
     session.  The tour covers:
 
         - Switching individual ↔ batch mode
-        - Adding lines via the pending-row form
+        - Adding lines that commit themselves when left, or with Enter
+        - Dropping a line left empty, or cancelled with Esc
         - Incrementing / decrementing qty
         - Removing a full group
-        - Saving and verifying persistence after reload
+        - Saving straight from a line being entered, its qty included
     """
 
     def test_batch_editing_tour(self):
@@ -34,4 +35,9 @@ class TestMany2ManyBWidgetTour(HttpCase):
             "/odoo/action-many2many_batch.action_test_batch_parent",
             "many2many_b_batch_editing",
             login="admin",
+        )
+        parent = self.env["many2many.batch.test.parent"].search([], order="id desc", limit=1)
+        self.assertEqual(
+            sorted(parent.item_ids.mapped(lambda item: (item.brand, item.model))),
+            [("Citroen", "C3"), ("Citroen", "C3"), ("Renault", "Megane"), ("Renault", "Megane")],
         )

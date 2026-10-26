@@ -2,6 +2,7 @@
 
 import { useState } from "@odoo/owl";
 import { makeContext } from "@web/core/context";
+import { x2ManyCommands } from "@web/core/orm_service";
 import { registry } from "@web/core/registry";
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
 import { BatchRenderer } from "../many2many_b_batch_renderer/batch_renderer";
@@ -140,23 +141,7 @@ export class Many2ManyBField extends X2ManyField {
             dbgGroup(`QTY INCREMENT +${delta} | group key: ${group.key}`);
             dbg("ACTION  group fieldValues:", group.fieldValues);
             // ────────────────────────────────────────────────────────────────
-            const context = this._buildContext(group.fieldValues);
-            // Fan out all addNewRecord calls in parallel — each makes a
-            // default_get RPC; running them concurrently cuts N serial
-            // round-trips down to one parallel batch.
-            const newRecords = await Promise.all(
-                Array.from({ length: delta }, () =>
-                    this.list.addNewRecord({ context, position: "bottom" })
-                )
-            );
-            dbg("STEP 1  addNewRecord ×", delta, "done:", newRecords.map((r) => snap(r, this.groupByFields)));
-            // Apply field values synchronously — no RPC, no extra renders.
-            // Runs before OWL flushes so every record lands in the right group
-            // on the very first render after the await.
-            for (const r of newRecords) {
-                if (r) this._applyFieldValuesDirect(r, group.fieldValues);
-            }
-            dbg("STEP 2  _applyFieldValuesDirect done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
+            await this._addRecordsLike(group.fieldValues, delta);
             dbgGroupEnd();
             return;
         }
@@ -192,92 +177,84 @@ export class Many2ManyBField extends X2ManyField {
     }
 
     /**
-     * After the user confirms a draft row with qty=N, clone the draft
-     * (qty-1) more times so the group ends up with N records sharing the
-     * draft's group-by values.
+     * Commit a draft row left by the user: N-1 more records like it for a
+     * qty of N, or the draft dropped when none of its group-by fields was
+     * filled. Resolves to whether it was kept.
+     *
+     * Queued on the model mutex rather than run now, and that ordering is the
+     * point: the edit of the field the user just left (a Char or Integer input
+     * writes on change, i.e. as focus leaves it) is already queued ahead of
+     * it, and a Save the same click goes on to trigger is queued behind it.
+     * Read now, the draft would miss its last field; run later, the Save would
+     * store a single record instead of N.
      */
-    async onCloneDraft({ draft, qty }) {
-        if (qty <= 1) return;
-        const fieldValues = {};
+    onSettleDraft({ draft, qty }) {
+        const list = this.list;
+        return list.model.mutex.exec(async () => {
+            const filled = this.groupByFields.some((field) => {
+                const value = draft.data[field];
+                return !(value === false || value === null || value === undefined || value === "" || value === 0);
+            });
+            if (!filled) {
+                await list._applyCommands([[x2ManyCommands.DELETE, draft.resId || draft._virtualId]]);
+                await list._onUpdate();
+                return false;
+            }
+            dbg(`SETTLE DRAFT #${draft.id} × ${qty}`, snap(draft, this.groupByFields));
+            await this._createRecordsLike(this._groupValues(draft), qty - 1);
+            await list._onUpdate();
+            return true;
+        });
+    }
+
+    _groupValues(record) {
+        const values = {};
         for (const field of this.groupByFields) {
-            fieldValues[field] = draft.data[field];
+            const value = record.data[field];
+            if (value === false || value === null || value === undefined || value === "") continue;
+            values[field] = value;
         }
+        return values;
+    }
 
-        // ── LOG ─────────────────────────────────────────────────────────────
-        dbgGroup(`CLONE DRAFT #${draft.id} × ${qty - 1} clones`);
-        dbg("ACTION  draft:", snap(draft, this.groupByFields));
-        dbg("        fieldValues to propagate:", fieldValues);
-        // ────────────────────────────────────────────────────────────────────
+    /**
+     * Add ``count`` records carrying a group's ``fieldValues``, as one model
+     * mutex job: a Save clicked right after [+] must find them complete.
+     */
+    _addRecordsLike(fieldValues, count) {
+        const list = this.list;
+        return list.model.mutex.exec(async () => {
+            await this._createRecordsLike(fieldValues, count);
+            await list._onUpdate();
+        });
+    }
 
+    /**
+     * Create ``count`` records at the bottom of the list, stamped with
+     * ``fieldValues`` without an onchange. Call it from inside a mutex job.
+     *
+     * Stamping in the same job as the creation is what keeps the values: the
+     * creation's onchange may default them differently (a crew row's
+     * nationality onchange re-defaults its visa situation, which once saved 8
+     * "VOA" joiners as 1 VOA + 7 "VISA at consulate"), and a Save slipping in
+     * between would persist the default.
+     *
+     * Uses StaticList internals (_createNewRecordDatapoint, _addRecord) since
+     * the public addNewRecord takes the mutex itself.
+     */
+    async _createRecordsLike(fieldValues, count) {
+        const list = this.list;
         const context = this._buildContext(fieldValues);
-        const newRecords = await Promise.all(
-            Array.from({ length: qty - 1 }, () =>
-                this.list.addNewRecord({ context, position: "bottom" })
-            )
-        );
-        dbg("STEP 1  addNewRecord ×", qty - 1, "done:", newRecords.map((r) => snap(r, this.groupByFields)));
-        for (const r of newRecords) {
-            if (r) this._applyFieldValuesDirect(r, fieldValues);
+        for (let added = 0; added < count; added++) {
+            const record = await list._createNewRecordDatapoint({ context, manuallyAdded: true });
+            await record._update(fieldValues, { withoutOnchange: true });
+            await list._addRecord(record, { position: "bottom" });
         }
-        dbg("STEP 2  _applyFieldValuesDirect done:", newRecords.filter(Boolean).map((r) => snap(r, this.groupByFields)));
-        dbgGroupEnd();
     }
 
     /** Delete a discarded draft from the bound list. */
     async onDiscardDraft(draft) {
         await this.list.delete(draft);
-    }
-
-    /**
-     * Synchronously stamp fieldValues onto a brand-new record (isNew=true).
-     *
-     * Why synchronous?  addNewRecord returns after its default_get RPC but
-     * before OWL flushes its render queue.  By writing record.data and
-     * record._changes here — still inside the same microtask — every new
-     * record already carries the right group-by values when OWL renders for
-     * the first time.  The result is a single clean render instead of:
-     *   render-with-null-values → await onchange RPC → render-with-real-values
-     *
-     * We write both data (display) and _changes (save payload).  For new
-     * records the two share the same reactive object in Odoo 19, so one write
-     * covers both; the explicit _changes write is a belt-and-suspenders guard
-     * for cases where they diverge (e.g. after a recompute).
-     *
-     * The context passed to addNewRecord still carries default_<field> keys so
-     * the server receives the right values on save even if _changes is ever
-     * recomputed from scratch.
-     */
-    _applyFieldValuesDirect(record, fieldValues) {
-        for (const [f, v] of Object.entries(fieldValues)) {
-            if (v === false || v === null || v === undefined || v === "") continue;
-            record.data[f] = v;
-            if (record._changes && typeof record._changes === "object") {
-                record._changes[f] = v;
-            }
-        }
-    }
-
-    /**
-     * Explicitly write fieldValues onto a freshly-created record.
-     * Only writes fields whose value is set (not false/null/undefined/empty).
-     * This ensures the new record's data and _changes are both written so that
-     * it joins the correct batch group immediately and survives validation.
-     */
-    async _applyFieldValues(record, fieldValues) {
-        const updates = Object.fromEntries(
-            Object.entries(fieldValues).filter(
-                ([, v]) => v !== false && v !== null && v !== undefined && v !== ""
-            )
-        );
-        if (!Object.keys(updates).length) {
-            dbg("_applyFieldValues: nothing to write (all values are falsy)");
-            return;
-        }
-        try {
-            await record.update(updates);
-        } catch (err) {
-            dbgErr("_applyFieldValues: record.update() failed on #" + record.id, err, updates);
-        }
     }
 
     /**

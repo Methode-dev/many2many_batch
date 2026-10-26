@@ -3,215 +3,99 @@
 /**
  * Tour: many2many_b_batch_editing
  *
- * Full lifecycle test for the many2many_b widget in batch-edit mode:
+ * Full lifecycle of the many2many_b widget in batch mode. A new line has no
+ * confirm button: it joins the table as soon as it is left.
  *
- *   1.  Open a new test-parent form.
- *   2.  Switch to Batch mode via the toggle pill.
- *   3.  Add line: Brand=Renault, Model=Megane, Qty=2 → Confirm.
- *   4.  Add line: Brand=Peugeot, Model=208,    Qty=1 → Confirm.
- *   5.  Increment the Renault group (2 → 3).
- *   6.  Decrement the Renault group (3 → 2).
- *   7.  Switch to Individual mode → verify 3 rows exist.
- *   8.  Switch back to Batch mode.
- *   9.  Remove the Peugeot group entirely.
- *   10. Save.
- *   11. Reload: switch to Batch → verify exactly one group (2× Renault Megane).
+ *   1. Renault Megane ×2, committed by moving on to the next line.
+ *   2. Peugeot 208 ×1, committed with Enter.
+ *   3. A line left empty is dropped; one cancelled with Esc is dropped.
+ *   4. [+] / [−] on the Renault group, then remove the Peugeot group.
+ *   5. Individual mode shows one row per record.
+ *   6. Citroen C3 ×2, saved straight from its line with the form's Save.
+ *   7. After the save: Renault ×2 and Citroen ×2, nothing else.
  */
 
 import { registry } from "@web/core/registry";
 
+const PENDING = ".o_many2many_b_pending_row";
+// Groups keep the order of their first record, so a group's row is stable.
+const row = (position) => `.o_many2many_b_group_row:nth-child(${position})`;
+
+/** The group at ``position`` is ``brand`` with ``qty`` records. */
+function expectGroup(position, brand, qty) {
+    return [
+        // Shown as text, or as an input while the row's record is editable.
+        {
+            trigger: `${row(position)} [name='brand']:contains(${brand}), ` +
+                `${row(position)} [name='brand'] input:value(${brand})`,
+        },
+        {trigger: `${row(position)} .o_many2many_b_qty_value:contains('${qty}')`},
+    ];
+}
+
+function fillLine(brand, model) {
+    return [
+        {trigger: ".o_many2many_b_btn_add_line", run: "click"},
+        {trigger: `${PENDING} [name='brand'] input`, run: `edit ${brand}`},
+        {trigger: `${PENDING} [name='model'] input`, run: `edit ${model}`},
+    ];
+}
+
 registry.category("web_tour.tours").add("many2many_b_batch_editing", {
-    test: true,
-    url: "/odoo/action-many2many_batch.action_test_batch_parent",
-
     steps: () => [
+        {trigger: ".o_form_view .o_field_widget[name='item_ids'] .o_many2many_b_batch_renderer"},
 
-        // ── 1. Form is open ──────────────────────────────────────────────────
-        {
-            trigger: ".o_form_view .o_field_widget[name='item_ids']",
-            content: "Form view is open with the item_ids field",
-            auto: true,
-        },
+        // ── 1. Committed by moving on ─────────────────────────────────────────
+        ...fillLine("Renault", "Megane"),
+        {content: "Qty 2 on the new line", trigger: `${PENDING} .o_many2many_b_btn_plus`, run: "click"},
+        {trigger: `${PENDING} .o_many2many_b_qty_value:contains('2')`},
 
-        // ── 2. Switch to Batch mode ──────────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_toggle [data-mode='batch']",
-            content: "Click the Batch toggle pill",
-            run: "click",
-        },
-        {
-            trigger: ".o_many2many_b_batch_renderer",
-            content: "Batch renderer is now visible",
-            auto: true,
-        },
+        // ── 2. Committed with Enter ───────────────────────────────────────────
+        ...fillLine("Peugeot", "208"),
+        // Starting the second line committed the first, with its qty.
+        ...expectGroup(1, "Renault", 2),
+        {trigger: `${PENDING} [name='model'] input`, run: "press Enter"},
+        {trigger: `body:not(:has(${PENDING}))`},
+        ...expectGroup(2, "Peugeot", 1),
 
-        // ── 3a. Add first line ───────────────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_btn_add_line",
-            content: "Open a new pending row",
-            run: "click",
-        },
-        {
-            trigger: ".o_many2many_b_pending_row [data-field='brand']",
-            content: "Type Brand = Renault",
-            run: "edit Renault",
-        },
-        {
-            trigger: ".o_many2many_b_pending_row [data-field='model']",
-            content: "Type Model = Megane",
-            run: "edit Megane",
-        },
-        {
-            trigger: ".o_many2many_b_pending_row [data-field='qty']",
-            content: "Set Qty = 2",
-            run: "edit 2",
-        },
+        // ── 3. Empty and cancelled lines are dropped ──────────────────────────
+        {trigger: ".o_many2many_b_btn_add_line", run: "click"},
+        {trigger: PENDING},
+        {content: "Leave the empty line", trigger: ".o_form_sheet", run: "click"},
+        {trigger: `body:not(:has(${PENDING}))`},
+        {trigger: ".o_many2many_b_batch_renderer:not(:has(.o_many2many_b_group_row:nth-child(3)))"},
+        {trigger: ".o_many2many_b_btn_add_line", run: "click"},
+        {trigger: `${PENDING} [name='brand'] input`, run: "edit Fiat"},
+        {trigger: `${PENDING} [name='brand'] input`, run: "press Escape"},
+        {trigger: `body:not(:has(${PENDING}))`},
+        {trigger: ".o_many2many_b_batch_renderer:not(:has(.o_many2many_b_group_row:nth-child(3)))"},
 
-        // ── 3b. Confirm first line ───────────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_pending_row .btn-success",
-            content: "Confirm the Renault Megane row",
-            run: "click",
-        },
-        {
-            // After confirmation the group row appears; no pending row remains.
-            trigger: ".o_many2many_b_group_row .o_many2many_b_qty_value:contains('2')",
-            content: "Renault Megane group shows qty 2",
-            auto: true,
-        },
+        // ── 4. [+] / [−] / remove ─────────────────────────────────────────────
+        {trigger: `${row(1)} .o_many2many_b_btn_plus`, run: "click"},
+        ...expectGroup(1, "Renault", 3),
+        {trigger: `${row(1)} .o_many2many_b_btn_minus`, run: "click"},
+        ...expectGroup(1, "Renault", 2),
+        {trigger: `${row(2)} .o_many2many_b_btn_remove`, run: "click"},
+        {trigger: ".modal .btn-primary", run: "click"},
+        {trigger: ".o_many2many_b_batch_renderer:not(:has(.o_many2many_b_group_row:nth-child(2)))"},
 
-        // ── 4a. Add second line ──────────────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_btn_add_line",
-            content: "Open a second pending row",
-            run: "click",
-        },
-        {
-            trigger: ".o_many2many_b_pending_row [data-field='brand']",
-            content: "Type Brand = Peugeot",
-            run: "edit Peugeot",
-        },
-        {
-            trigger: ".o_many2many_b_pending_row [data-field='model']",
-            content: "Type Model = 208",
-            run: "edit 208",
-        },
-        {
-            trigger: ".o_many2many_b_pending_row [data-field='qty']",
-            content: "Set Qty = 1",
-            run: "edit 1",
-        },
+        // ── 5. Individual mode: one row per record ────────────────────────────
+        {trigger: ".o_many2many_b_toggle [data-mode='individual']", run: "click"},
+        {trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(2)"},
+        {trigger: ".o_field_widget[name='item_ids']:not(:has(.o_data_row:nth-child(3)))"},
+        {trigger: ".o_many2many_b_toggle [data-mode='batch']", run: "click"},
+        {trigger: ".o_many2many_b_batch_renderer"},
 
-        // ── 4b. Confirm second line ──────────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_pending_row .btn-success",
-            content: "Confirm the Peugeot 208 row",
-            run: "click",
-        },
-        {
-            // Now there are two groups; look for the second one.
-            trigger: ".o_many2many_b_group_row:nth-child(2)",
-            content: "Two groups are now visible",
-            auto: true,
-        },
+        // ── 6. Saved straight from the line ───────────────────────────────────
+        ...fillLine("Citroen", "C3"),
+        {trigger: `${PENDING} .o_many2many_b_btn_plus`, run: "click"},
+        {trigger: `${PENDING} .o_many2many_b_qty_value:contains('2')`},
+        {content: "Save without leaving the line first", trigger: ".o_form_button_save", run: "click"},
+        {trigger: "body:not(:has(.o_form_button_save:visible))"},
 
-        // ── 5. Increment Renault group (2 → 3) ──────────────────────────────
-        // Initially: Renault is :first-child (added first), Peugeot
-        // :nth-child(2).  Clicking [+] adds a new Renault record at the
-        // bottom of the underlying list, which bumps the Renault group to
-        // the bottom of the table — so after the click Renault is
-        // :nth-child(2) and Peugeot is :first-child.
-        {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_btn_plus",
-            content: "Increment the Renault Megane group",
-            run: "click",
-        },
-        {
-            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_qty_value:contains('3')",
-            content: "Renault Megane qty is now 3 (and the group has bumped to row 2)",
-            auto: true,
-        },
-
-        // ── 6. Decrement Renault group (3 → 2) ──────────────────────────────
-        // Removing the last-added Renault record drops its lastIndex back
-        // below Peugeot's, so Renault returns to :first-child.
-        {
-            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_minus",
-            content: "Decrement the Renault Megane group back to 2",
-            run: "click",
-        },
-        {
-            trigger: ".o_many2many_b_group_row:first-child .o_many2many_b_qty_value:contains('2')",
-            content: "Renault Megane qty is back to 2 (and the group returns to row 1)",
-            auto: true,
-        },
-
-        // ── 7. Switch to Individual mode ─────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_toggle [data-mode='individual']",
-            content: "Switch to Individual mode",
-            run: "click",
-        },
-        {
-            // 2 Renault + 1 Peugeot = 3 individual rows in the embedded list.
-            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3)",
-            content: "Three individual rows are visible",
-            auto: true,
-        },
-
-        // ── 8. Switch back to Batch mode ─────────────────────────────────────
-        {
-            trigger: ".o_many2many_b_toggle [data-mode='batch']",
-            content: "Switch back to Batch mode",
-            run: "click",
-        },
-        {
-            trigger: ".o_many2many_b_batch_renderer",
-            content: "Batch renderer is visible again",
-            auto: true,
-        },
-
-        // ── 9. Remove the Peugeot group ──────────────────────────────────────
-        // After the increment+decrement above, the order is back to Renault
-        // (:first-child) then Peugeot (:nth-child(2)).
-        {
-            trigger: ".o_many2many_b_group_row:nth-child(2) .o_many2many_b_btn_remove",
-            content: "Remove the Peugeot 208 group",
-            run: "click",
-        },
-        {
-            // Only one group row should remain.
-            trigger:
-                ".o_many2many_b_batch_renderer .o_many2many_b_group_row:only-child",
-            content: "Only one group remains (Renault Megane)",
-            auto: true,
-        },
-
-        // ── 10. Save ──────────────────────────────────────────────────────────
-        {
-            trigger: ".o_form_button_save",
-            content: "Save the record",
-            run: "click",
-        },
-        {
-            trigger: ".o_form_view:not(.o_form_dirty)",
-            content: "Record saved successfully",
-            auto: true,
-        },
-
-        // ── 11. Reload: verify persistence ───────────────────────────────────
-        {
-            // After save Odoo stays on the same form; switch to Batch to verify.
-            trigger: ".o_many2many_b_toggle [data-mode='batch']",
-            content: "Switch to Batch after reload",
-            run: "click",
-        },
-        {
-            trigger:
-                ".o_many2many_b_batch_renderer .o_many2many_b_group_row:only-child " +
-                ".o_many2many_b_qty_value:contains('2')",
-            content: "Exactly one group with qty 2 survives the save/reload cycle",
-            auto: true,
-        },
+        // ── 7. What was saved ─────────────────────────────────────────────────
+        ...expectGroup(1, "Renault", 2),
+        ...expectGroup(2, "Citroen", 2),
+        {trigger: ".o_many2many_b_batch_renderer:not(:has(.o_many2many_b_group_row:nth-child(3)))"},
     ],
 });

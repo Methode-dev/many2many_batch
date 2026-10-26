@@ -1,10 +1,14 @@
 /** @odoo-module **/
 
-import { Component, onWillUnmount, useEffect, useRef, useState } from "@odoo/owl";
+import { Component, onWillUnmount, useEffect, useExternalListener, useRef, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { GroupByCell } from "../group_by_cell/group_by_cell";
 import { dbg, dbgErr, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
+
+// Focus or a click landing here has not left the draft row: a picker's
+// dropdown, a popover (date picker…) or a dialog it opened ("Search More…").
+const DRAFT_OVERLAYS = ".o-autocomplete--dropdown-menu, .o-dropdown--menu, .o_popover, .modal";
 
 /**
  * Renders the batch view of the many2many_b widget.
@@ -39,7 +43,7 @@ export class BatchRenderer extends Component {
         readonly: { type: Boolean },
         onQtyChange: { type: Function },    // ({group, delta}) => Promise<void>
         onAddDraft: { type: Function },     // () => Promise<OwlRecord>
-        onCloneDraft: { type: Function },   // ({draft, qty}) => Promise<void>
+        onSettleDraft: { type: Function },  // ({draft, qty}) => Promise<boolean kept>
         onDiscardDraft: { type: Function }, // (draft) => Promise<void>
     };
 
@@ -84,6 +88,13 @@ export class BatchRenderer extends Component {
             () => this._wrapNewHosts(),
             () => [this.props.records.length]
         );
+
+        // A click outside a draft row commits it — in the capture phase, so
+        // ahead of whatever the click is for (Save, a form button): see the
+        // field's onSettleDraft for why that ordering matters.
+        useExternalListener(document, "click", (ev) => this._onDocumentClick(ev), {
+            capture: true,
+        });
 
         onWillUnmount(() => {
             this._unwrapAllHosts();
@@ -232,7 +243,7 @@ export class BatchRenderer extends Component {
     async _withBusy(fn) {
         this.state.isBusy = true;
         try {
-            await fn();
+            return await fn();
         } finally {
             this.state.isBusy = false;
         }
@@ -450,45 +461,89 @@ export class BatchRenderer extends Component {
         }
     }
 
-    updateDraftQty(entry, rawValue) {
-        const qty = parseInt(rawValue, 10);
-        if (!isNaN(qty) && qty >= 1) entry.qty = qty;
+    stepDraftQty(entry, delta) {
+        entry.qty = Math.max(1, entry.qty + delta);
     }
 
-    async confirmDraft(entry) {
-        if (entry.qty < 1) entry.qty = 1;
-        const draftKey = this._recordGroupKey(entry.record);
-        const targetGroup = this.groups.find((g) => g.key === draftKey);
-        const isMerge = !!targetGroup;
-        const addedQty = entry.qty;
+    _draftRow(entry) {
+        return this.rootRef.el?.querySelector(
+            `.o_many2many_b_pending_row[data-draft-id="${entry.record.id}"]`
+        );
+    }
 
-        // ── LOG: USER ACTION ────────────────────────────────────────────────
-        dbgGroup(`CONFIRM DRAFT #${entry.record.id} qty=${entry.qty} merge=${isMerge}`);
-        dbg("ACTION  draft record :", snap(entry.record, this.props.groupByFields));
-        if (isMerge) dbg("        will merge into existing group key:", draftKey);
-        // ────────────────────────────────────────────────────────────────────
+    _isInsideDraft(entry, element) {
+        if (!element) return false;
+        const row = this._draftRow(entry);
+        return Boolean((row && row.contains(element)) || element.closest(DRAFT_OVERLAYS));
+    }
 
-        await this._withBusy(async () => {
-            await this.props.onCloneDraft({ draft: entry.record, qty: entry.qty });
-            dbg("AFTER   onCloneDraft done");
-            this._removeDraft(entry);
-        });
-        dbgGroupEnd();
-
-        if (isMerge) {
-            const token = ++this._mergeFlashToken;
-            this.state.mergeFlash = { key: draftKey, delta: addedQty, token };
-            setTimeout(() => {
-                if (this.state.mergeFlash && this.state.mergeFlash.token === token) {
-                    this.state.mergeFlash = null;
-                }
-            }, 1200);
+    _onDocumentClick(ev) {
+        for (const entry of [...this.pendingDrafts]) {
+            if (!this._isInsideDraft(entry, ev.target)) {
+                this.settleDraft(entry);
+            }
         }
     }
 
-    async discardDraft(entry) {
-        await this.props.onDiscardDraft(entry.record);
+    /** Tabbing out of the row commits it too. */
+    onDraftFocusOut(entry, ev) {
+        // Focus that leaves for nowhere (a click on plain page) is the click
+        // listener's to handle.
+        if (ev.relatedTarget && !this._isInsideDraft(entry, ev.relatedTarget)) {
+            this.settleDraft(entry);
+        }
+    }
+
+    onDraftKeydown(entry, ev) {
+        // Enter / Esc belong to a picker while its dropdown is open.
+        if (this._draftRow(entry)?.querySelector(".o-autocomplete--dropdown-menu")) return;
+        if (ev.key === "Enter") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            // Leaving the input writes what was typed into it, ahead of the
+            // commit.
+            document.activeElement?.blur();
+            this.settleDraft(entry);
+        } else if (ev.key === "Escape") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.discardDraft(entry);
+        }
+    }
+
+    /**
+     * Hand a left draft to the field to commit (or drop, when empty). Runs at
+     * most once per draft: leaving the row by a click fires both the click
+     * listener and focusout.
+     */
+    async settleDraft(entry) {
+        if (entry.settled || !this.state.drafts.includes(entry)) return;
+        entry.settled = true;
+        const { record, qty } = entry;
         this._removeDraft(entry);
+        const kept = await this._withBusy(() => this.props.onSettleDraft({ draft: record, qty }));
+        if (!kept) return;
+        const key = this._recordGroupKey(record);
+        const group = this.groups.find((g) => g.key === key);
+        if (group && group.records.length > qty) {
+            this._flashMerge(key, qty);
+        }
+    }
+
+    _flashMerge(key, delta) {
+        const token = ++this._mergeFlashToken;
+        this.state.mergeFlash = { key, delta, token };
+        setTimeout(() => {
+            if (this.state.mergeFlash && this.state.mergeFlash.token === token) {
+                this.state.mergeFlash = null;
+            }
+        }, 1200);
+    }
+
+    async discardDraft(entry) {
+        entry.settled = true;
+        this._removeDraft(entry);
+        await this.props.onDiscardDraft(entry.record);
     }
 
     _removeDraft(entry) {

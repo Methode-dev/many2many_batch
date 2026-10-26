@@ -78,7 +78,7 @@
                 text-align: center;
             }
 
-            // Brief colour flash on the qty number when a draft confirm
+            // Brief colour flash on the qty number when a committed draft
             // merges new records into an existing group.
             .o_many2many_b_qty_pulse {
                 animation: o-m2m-b-qty-pulse 1.2s ease-out;
@@ -99,15 +99,11 @@
             }
         }
 
-        // Qty input inside a pending row.
-        .o_many2many_b_qty_input {
-            width: 70px;
-            text-align: center;
-            display: inline-block;
-        }
-
+        // A line being entered: set apart from the committed groups until it
+        // is left, when it joins them.
         .o_many2many_b_pending_row td {
             vertical-align: middle;
+            background-color: rgba(113, 75, 103, 0.05);
         }
 
         // "—" placeholder for fields not filled during batch entry.

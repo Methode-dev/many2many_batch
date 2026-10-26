@@ -57,7 +57,7 @@
                 readonly="isReadonly"
                 onQtyChange.bind="onQtyChange"
                 onAddDraft.bind="onAddDraft"
-                onCloneDraft.bind="onCloneDraft"
+                onSettleDraft.bind="onSettleDraft"
                 onDiscardDraft.bind="onDiscardDraft"
             />
         </t>
