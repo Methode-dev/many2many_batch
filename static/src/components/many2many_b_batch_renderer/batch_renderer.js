@@ -42,7 +42,7 @@ export class BatchRenderer extends Component {
         fields: { type: Object },           // field descriptors of the item model
         readonly: { type: Boolean },
         onQtyChange: { type: Function },    // ({group, delta}) => Promise<void>
-        onAddDraft: { type: Function },     // () => Promise<OwlRecord>
+        onAddDraft: { type: Function },     // ({onCreated}) => Promise<OwlRecord>
         onSettleDraft: { type: Function },  // ({draft, qty}) => Promise<boolean kept>
         onDiscardDraft: { type: Function }, // (draft) => Promise<void>
     };
@@ -73,20 +73,21 @@ export class BatchRenderer extends Component {
             () => [this.state.drafts.length]
         );
 
-        // Flip every record into edit mode so embedded <Field> widgets render
-        // editable.  Records loaded from DB default to "readonly" mode in
-        // Odoo 19 (isInEdition only auto-true when isNew); without this flip
-        // <Field> shows a static link/text instead of an input.
+        // Keyed on the record objects themselves, not on how many there are:
+        // a save reloads the list into new record objects of the same length,
+        // and keying on the count left those readonly (no inputs in the group
+        // cells) and without propagation (an edit reached only the host, and
+        // the group split).
+        //
+        // Records loaded from the DB start "readonly" in Odoo 19 (isInEdition
+        // is only true for new ones); <Field> needs them in edit mode to render
+        // an input.
         useEffect(
-            () => this._ensureRecordsEditable(),
-            () => [this.props.records.length]
-        );
-
-        // Install the host-update wrapper on any new group host records.
-        // Depends on records.length — new records may introduce new groups.
-        useEffect(
-            () => this._wrapNewHosts(),
-            () => [this.props.records.length]
+            () => {
+                this._ensureRecordsEditable();
+                this._syncHostWrappers();
+            },
+            () => [...this.props.records]
         );
 
         // A click outside a draft row commits it — in the capture phase, so
@@ -152,25 +153,45 @@ export class BatchRenderer extends Component {
     // -------------------------------------------------------------------------
 
     /**
-     * For each group whose host (records[0]) has not yet been wrapped, installs
-     * a wrapper on host.update() that propagates group-by field changes to all
-     * sibling records in the group.
+     * Wrap the host (records[0]) of every group so an edit of a group-by
+     * field reaches the whole group, and release records that left the list.
      *
      * The wrapper:
      *   1. Synchronously writes newValue into sibling.data[field] (visual sync,
      *      prevents the brief split-then-merge flash on re-render).
      *   2. Awaits originalUpdate(changes) on the host so _changes is written.
-     *   3. Sequentially awaits sibling.update({ field: newValue }) for every
-     *      sibling so their _changes are written and survive Odoo's reactive
-     *      reconciliation at validation time.
+     *   3. Awaits each sibling's *original* update so their _changes are
+     *      written too — the original, so a sibling that is itself wrapped
+     *      does not propagate a second time.
      */
-    _wrapNewHosts() {
+    _syncHostWrappers() {
+        const live = new Set(this.props.records);
+        for (const record of [...this._wrappedHosts]) {
+            if (!live.has(record)) {
+                record.update = this._originalUpdates.get(record) || record.update;
+                this._wrappedHosts.delete(record);
+            }
+        }
         for (const group of this.groups) {
             const host = group.records[0];
             if (!host || this._wrappedHosts.has(host)) continue;
             this._wrapHostUpdate(host);
             this._wrappedHosts.add(host);
         }
+    }
+
+    /**
+     * The records sharing ``record``'s group-by values, drafts excluded —
+     * looked up by value at the moment of the edit, never by position: which
+     * record happens to be a group's records[0] changes as lines come and go.
+     */
+    _groupSiblings(record) {
+        if (this.draftRecords.has(record)) return [];
+        const key = this._recordGroupKey(record);
+        const drafts = this.draftRecords;
+        return this.props.records.filter(
+            (other) => other !== record && !drafts.has(other) && this._recordGroupKey(other) === key
+        );
     }
 
     _wrapHostUpdate(host) {
@@ -193,11 +214,8 @@ export class BatchRenderer extends Component {
                 return originalUpdate(changes);
             }
 
-            // Identify siblings at the moment the change fires (before re-render).
-            const currentGroup = self.groups.find((g) => g.records[0] === host);
-            const siblings = currentGroup
-                ? currentGroup.records.filter((r) => r !== host)
-                : [];
+            // Siblings by value, before the change moves the host's key.
+            const siblings = self._groupSiblings(host);
 
             // ── LOG: USER ACTION ────────────────────────────────────────────
             dbgGroup(`BATCH EDIT host#${host.id} | fields: ${Object.keys(groupByChanges).join(", ")}`);
@@ -226,7 +244,8 @@ export class BatchRenderer extends Component {
             await Promise.all(
                 siblings.map(async (sibling, i) => {
                     try {
-                        await sibling.update(groupByChanges);
+                        const update = self._originalUpdates.get(sibling) || sibling.update.bind(sibling);
+                        await update(groupByChanges);
                         dbg(`STEP 3  sibling[${i}]#${sibling.id} update OK :`, snap(sibling, groupByFields));
                     } catch (err) {
                         dbgErr(`STEP 3  sibling[${i}]#${sibling.id} update FAILED`, err, snap(sibling, groupByFields));
@@ -436,10 +455,16 @@ export class BatchRenderer extends Component {
     // Draft-row lifecycle (Add a line)
     // -------------------------------------------------------------------------
 
+    /**
+     * The draft is registered the moment its record exists, before the record
+     * joins the list: registered after, it would render for a frame as an
+     * ordinary group row — and get wrapped as that group's host.
+     */
     async addDraft() {
-        const draft = await this.props.onAddDraft();
+        const draft = await this.props.onAddDraft({
+            onCreated: (record) => this.state.drafts.push({ record, qty: 1 }),
+        });
         if (draft) {
-            this.state.drafts.push({ record: draft, qty: 1 });
             this._pendingFocusDraftId = draft.id;
         }
     }

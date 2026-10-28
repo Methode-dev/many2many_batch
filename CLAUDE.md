@@ -108,6 +108,27 @@ persist the default. It uses `StaticList` internals (`_createNewRecordDatapoint`
 `_addRecord`, `_applyCommands`, `_onUpdate`) because the public methods take the
 mutex themselves.
 
+### Records are tracked by identity, never by count
+
+A save reloads the list into **new record objects of the same length**. Every
+effect that has to see each record (switching it to edit mode so its cells show
+inputs, wrapping each group's host so an edit reaches the whole group) is keyed
+on the records themselves (`() => [...this.props.records]`), not on
+`records.length`. Keyed on the count, the reloaded rows stayed readonly and
+unwrapped: a saved group lost its inputs, and an edit reached only its first
+record — the group split.
+
+Likewise, an edit finds the records it must reach **by value at the moment of
+the edit** (`_groupSiblings`: same group-by key, drafts excluded), never by
+position: which record is a group's `records[0]` changes as lines come and go.
+Siblings are updated through their *original* `update`, so a sibling that is
+itself wrapped never propagates a second time.
+
+A draft is registered **before its record joins the list** (`onAddDraft`
+hands it to the renderer from inside the mutex job). Registered after, it
+rendered for a frame as an ordinary group row and got wrapped as that group's
+host.
+
 ---
 
 ## Key OWL component contracts

@@ -13,6 +13,8 @@
  *   5. Individual mode shows one row per record.
  *   6. Citroen C3 ×2, saved straight from its line with the form's Save.
  *   7. After the save: Renault ×2 and Citroen ×2, nothing else.
+ *   8. A saved group is still editable, and the edit reaches every record.
+ *   9. A line added after a save leaves the saved groups alone.
  */
 
 import { registry } from "@web/core/registry";
@@ -97,5 +99,23 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
         ...expectGroup(1, "Renault", 2),
         ...expectGroup(2, "Citroen", 2),
         {trigger: ".o_many2many_b_batch_renderer:not(:has(.o_many2many_b_group_row:nth-child(3)))"},
+
+        // ── 8. The saved rows are new record objects: still editable, and an
+        //      edit still reaches the whole group (it used to split it) ───────
+        {trigger: `${row(1)} [name='model'] input`, run: "edit Clio && press Tab"},
+        {trigger: `${row(1)} [name='model'] input:value(Clio)`},
+        ...expectGroup(1, "Renault", 2),
+        {trigger: ".o_many2many_b_batch_renderer:not(:has(.o_many2many_b_group_row:nth-child(3)))"},
+
+        // ── 9. A line added after a save leaves the saved groups alone ───────
+        ...fillLine("Fiat", "Panda"),
+        {trigger: `${PENDING} [name='model'] input`, run: "press Enter"},
+        {trigger: `body:not(:has(${PENDING}))`},
+        ...expectGroup(1, "Renault", 2),
+        ...expectGroup(2, "Citroen", 2),
+        ...expectGroup(3, "Fiat", 1),
+        {trigger: ".o_form_button_save:visible", run: "click"},
+        {trigger: "body:not(:has(.o_form_button_save:visible))"},
+        ...expectGroup(1, "Renault", 2),
     ],
 });

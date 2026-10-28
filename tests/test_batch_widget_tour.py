@@ -26,6 +26,8 @@ class TestMany2ManyBWidgetTour(HttpCase):
         - Incrementing / decrementing qty
         - Removing a full group
         - Saving straight from a line being entered, its qty included
+        - Editing a saved group (its records are reloaded objects) without
+          splitting it, and adding a line after a save
     """
 
     def test_batch_editing_tour(self):
@@ -39,5 +41,6 @@ class TestMany2ManyBWidgetTour(HttpCase):
         parent = self.env["many2many.batch.test.parent"].search([], order="id desc", limit=1)
         self.assertEqual(
             sorted(parent.item_ids.mapped(lambda item: (item.brand, item.model))),
-            [("Citroen", "C3"), ("Citroen", "C3"), ("Renault", "Megane"), ("Renault", "Megane")],
+            [("Citroen", "C3"), ("Citroen", "C3"), ("Fiat", "Panda"),
+             ("Renault", "Clio"), ("Renault", "Clio")],
         )

@@ -171,9 +171,21 @@ export class Many2ManyBField extends X2ManyField {
      * group-by values yet — the user will type them via Field widgets in the
      * draft row).  Returns the newly created OWL record.
      */
-    async onAddDraft() {
+    /**
+     * Create a draft row's record and hand it to ``onCreated`` *before* it
+     * joins the list, so the renderer knows it as a draft from its first
+     * render. Same steps as StaticList.addNewRecord, in one mutex job.
+     */
+    onAddDraft({ onCreated }) {
+        const list = this.list;
         const context = this._buildContext({});
-        return await this.list.addNewRecord({ context, position: "bottom" });
+        return list.model.mutex.exec(async () => {
+            const record = await list._createNewRecordDatapoint({ context, manuallyAdded: true });
+            onCreated(record);
+            await list._addRecord(record, { position: "bottom" });
+            await list._onUpdate({ withoutOnchange: !record._checkValidity({ silent: true }) });
+            return record;
+        });
     }
 
     /**
