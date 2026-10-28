@@ -3,6 +3,8 @@
 import { Component } from "@odoo/owl";
 import { Field } from "@web/views/fields/field";
 import { Domain } from "@web/core/domain";
+import { evaluateBooleanExpr } from "@web/core/py_js/py";
+import { useRecordObserver } from "@web/model/relational_model/utils";
 
 /**
  * Thin wrapper around Odoo's <Field> for a group-by cell in the batch table.
@@ -23,7 +25,6 @@ import { Domain } from "@web/core/domain";
  *
  * Only applied to many2one fields — other widgets (e.g. IntegerField) do not
  * accept domain in their static props and OWL would throw an unknown-key error.
-=======
  */
 export class GroupByCell extends Component {
     static template = "many2many_batch.GroupByCell";
@@ -33,17 +34,96 @@ export class GroupByCell extends Component {
         record: { type: Object },
         name: { type: String },
         readonly: { type: Boolean, optional: true },
+        // Called with the record when THIS cell's value changes (never on the
+        // initial render). The table dialog uses it to write the row through
+        // immediately; batch-table cells leave it unset.
+        onChanged: { type: Function, optional: true },
     };
+
+    setup() {
+        if (!this.props.onChanged) {
+            return;
+        }
+        // useRecordObserver subscribes to whatever its callback reads, so reading
+        // our own field is what narrows this to "this cell changed" instead of
+        // "anything on the row changed". It also fires once on mount, which is
+        // not an edit.
+        let initial = true;
+        useRecordObserver((record) => {
+            void record.data[this.props.name];
+            if (initial) {
+                initial = false;
+                return;
+            }
+            this.props.onChanged(record);
+        });
+    }
+
+    /**
+     * The subset of many2one props that come from `options="{...}"` on the field,
+     * mapped the same way extractM2OFieldProps does (web/.../many2one_field.js).
+     * Only the keys actually set are returned, so the widget keeps its defaults
+     * for the rest.
+     */
+    many2oneOptionProps(record, name) {
+        const options = record.activeFields?.[name]?.options || {};
+        const props = {};
+        if (options.no_open) {
+            props.canOpen = false;
+        }
+        if (options.no_create) {
+            props.canCreate = false;
+            props.canCreateEdit = false;
+            props.canQuickCreate = false;
+        }
+        if (options.no_create_edit) {
+            props.canCreateEdit = false;
+        }
+        if (options.no_quick_create) {
+            props.canQuickCreate = false;
+        }
+        return props;
+    }
+
+    /**
+     * Whether the field itself refuses to be written, as opposed to the host
+     * asking for a read-only cell.
+     *
+     * <Field> only applies a field's own readonly when it is handed a fieldInfo,
+     * which this component does not do — so without this, a computed field with no
+     * inverse (a crew line's full name, built from the contact's name parts)
+     * rendered as an editable input whose value had nowhere to go. Mirrors what
+     * Field does with a fieldInfo: evaluate the arch modifier, which
+     * Field.parseFieldNode already seeds from the model's own readonly flag; the
+     * descriptor is the fallback when a column has no arch entry at all.
+     */
+    fieldIsReadonly(record, name) {
+        const modifier = record.activeFields?.[name]?.readonly;
+        if (modifier !== undefined && modifier !== null) {
+            return evaluateBooleanExpr(modifier, record.evalContextWithVirtualIds);
+        }
+        return Boolean(record.fields?.[name]?.readonly);
+    }
 
     get fieldProps() {
         const record = this.props.record;
         const name = this.props.name;
-        const base = { record, name, readonly: this.props.readonly };
+        const base = {
+            record,
+            name,
+            readonly: Boolean(this.props.readonly) || this.fieldIsReadonly(record, name),
+        };
 
         const fieldType = record.fields?.[name]?.type;
         if (fieldType !== "many2one") {
             return base;
         }
+        // Apply the sub-view's own many2one options. This component renders <Field>
+        // without a fieldInfo, so extractM2OFieldProps never runs and the widget
+        // falls back to its permissive defaults (canOpen / canCreateEdit /
+        // canQuickCreate all true) — meaning options like no_open, set on the list
+        // column, were silently ignored here while being honoured everywhere else.
+        Object.assign(base, this.many2oneOptionProps(record, name));
 
         // Primary path: domain stored in activeFields (Odoo <19 / future versions).
         const domainExpr = record.activeFields?.[name]?.domain;

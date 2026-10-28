@@ -1,0 +1,112 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// RecordsTableDialog — the whole x2many as one wide table
+// ─────────────────────────────────────────────────────────────────────────────
+
+.o_m2m_b_table_dialog {
+    // The table scrolls; the dialog and its footer stay put.
+    .o_m2m_b_table_scroll {
+        overflow: auto;
+        max-height: 70vh;
+    }
+
+    .o_m2m_b_full_table {
+        // Let every column take the width its content needs instead of an equal
+        // share — a date and a nationality have nothing in common.
+        width: auto;
+        min-width: 100%;
+
+        thead th {
+            // Headers stay visible while scrolling a long crew list.
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--o-view-background-color, #fff);
+            white-space: nowrap;
+            vertical-align: middle;
+            padding: 0.35rem 0.6rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: var(--o-gray-700, #495057);
+        }
+
+        tbody td {
+            padding: 0.35rem 0.6rem;
+            height: 2.75rem;
+            white-space: nowrap;
+        }
+
+        // The row that was clicked to open the dialog.
+        tbody tr.o_m2m_b_table_active_row > td {
+            background: var(--o-gray-100, #f8f9fa);
+            box-shadow: inset 3px 0 0 0 var(--bs-primary, #714b67);
+        }
+
+        // Give the inputs the whole cell so the row reads as a table, not as a
+        // string of loose widgets.
+        //
+        // `> div` must exclude .o_field_input_buttons. Odoo gives a char field's
+        // wrapper `position: relative` and pins that element absolutely to
+        // `right: 0` with `height: 100%`, revealing it on hover
+        // (web/.../fields/char/char_field.scss) — it normally hugs the translate /
+        // dynamic-placeholder buttons and is empty otherwise. Stretching it to the
+        // full cell width turned it into a transparent overlay across the input:
+        // hovering the cell made it visible, so every click landed on it instead of
+        // the input, which therefore never took focus and could not be typed into.
+        // Many2one and date columns have no such element, which is why only Ppt n°
+        // and Smbk n° were affected — and why they behaved normally everywhere
+        // outside this dialog.
+        .o_field_widget,
+        .o_field_widget > div:not(.o_field_input_buttons),
+        .o_field_widget input,
+        .o_field_widget .o-autocomplete,
+        .o_field_widget .o-autocomplete--input {
+            width: 100%;
+            min-width: 6rem;
+        }
+        // Keep that overlay hugging its buttons, whatever else sets a width above.
+        .o_field_input_buttons {
+            width: auto;
+            min-width: 0;
+        }
+        // Dates and datetimes never need more than this.
+        .o_field_date input,
+        .o_field_datetime input {
+            min-width: 7.5rem;
+        }
+
+        // A cell hosting the row action: the value keeps the space it needs, the
+        // arrow sits tight against it.
+        .o_m2m_b_cell_with_action {
+            display: flex;
+            align-items: center;
+            gap: 0.15rem;
+
+            > .o_field_widget {
+                flex: 1 1 auto;
+            }
+            .o_m2m_b_cell_action {
+                flex: 0 0 auto;
+            }
+        }
+
+        // Row action column: pinned to the right edge so the button stays in reach
+        // however far the table is scrolled sideways — with 14 columns it would
+        // otherwise be the one thing you have to hunt for.
+        th.o_m2m_b_row_action,
+        td.o_m2m_b_row_action {
+            position: sticky;
+            right: 0;
+            width: 2.75rem;
+            min-width: 2.75rem;
+            text-align: center;
+            padding-left: 0;
+            padding-right: 0;
+            background: var(--o-view-background-color, #fff);
+            // Above the other cells, and above the sticky header row it crosses.
+            z-index: 2;
+        }
+        th.o_m2m_b_row_action {
+            z-index: 3;
+        }
+    }
+}

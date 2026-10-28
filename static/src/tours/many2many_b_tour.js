@@ -119,3 +119,72 @@ registry.category("web_tour.tours").add("many2many_b_batch_editing", {
         ...expectGroup(1, "Renault", 2),
     ],
 });
+
+/**
+ * Tour: many2many_b_batch_regression
+ *
+ * Regression guard for the batch→individual data-loss bug.
+ *
+ * Batch-created records used to be populated with a raw data write that left
+ * record.dirty === false.  Such a record satisfies Record.canBeAbandoned, so
+ * the stock editable list silently dropped it (and mis-targeted edits to the
+ * first in-edition row) on the first click in Individual mode.  This tour adds
+ * a batch of 4, switches to Individual (which commits the new line), then
+ * CLICKS a row and edits it — the
+ * exact interaction that triggered the drop — and asserts that all 4 rows
+ * survive and the edit lands on the clicked row.
+ */
+registry.category("web_tour.tours").add("many2many_b_batch_regression", {
+    steps: () => [
+        {trigger: ".o_many2many_b_batch_renderer"},
+
+        // ── A batch of 4 Renault Megane ──────────────────────────────────────
+        ...fillLine("Renault", "Megane"),
+        {trigger: `${PENDING} .o_many2many_b_btn_plus`, run: "click"},
+        {trigger: `${PENDING} .o_many2many_b_qty_value:contains('2')`},
+        {trigger: `${PENDING} .o_many2many_b_btn_plus`, run: "click"},
+        {trigger: `${PENDING} .o_many2many_b_qty_value:contains('3')`},
+        {trigger: `${PENDING} .o_many2many_b_btn_plus`, run: "click"},
+        {trigger: `${PENDING} .o_many2many_b_qty_value:contains('4')`},
+
+        // ── Switch to Individual mode: leaving the line commits it ───────────
+        {trigger: ".o_many2many_b_toggle [data-mode='individual']", run: "click"},
+        {
+            content: "All 4 rows present after the switch",
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(4)",
+        },
+
+        // ── The regression: click into row 3 and edit it ─────────────────────
+        // With the bug, this first click abandons a non-dirty clone (dropping a
+        // row) and/or routes the edit to the wrong row.
+        {
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3) [name='plate']",
+            run: "click",
+        },
+        {
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3) [name='plate'] input",
+            run: "edit ROW3PLATE",
+        },
+        {
+            content: "Click row 1 to leave row 3's edit",
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(1) [name='plate']",
+            run: "click",
+        },
+        {
+            content: "Still 4 rows after editing (no rows dropped)",
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(4)",
+        },
+        {
+            content: "Row 3 carries the value typed into it",
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(3) [name='plate']:contains('ROW3PLATE')",
+        },
+
+        // ── Save + reload persistence ────────────────────────────────────────
+        {trigger: ".o_form_button_save:visible", run: "click"},
+        {trigger: "body:not(:has(.o_form_button_save:visible))"},
+        {
+            content: "All 4 rows survive the save/reload cycle",
+            trigger: ".o_field_widget[name='item_ids'] .o_data_row:nth-child(4)",
+        },
+    ],
+});

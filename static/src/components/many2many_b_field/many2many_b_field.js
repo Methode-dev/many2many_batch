@@ -4,9 +4,11 @@ import { useState } from "@odoo/owl";
 import { makeContext } from "@web/core/context";
 import { x2ManyCommands } from "@web/core/orm_service";
 import { registry } from "@web/core/registry";
+import { useService } from "@web/core/utils/hooks";
 import { X2ManyField, x2ManyField } from "@web/views/fields/x2many/x2many_field";
 import { BatchRenderer } from "../many2many_b_batch_renderer/batch_renderer";
-import { dbg, dbgErr, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
+import { RecordsTableDialog } from "../records_table_dialog/records_table_dialog";
+import { dbg, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
 
 /**
  * Many2manyB — a One2many/Many2many widget with two view modes:
@@ -31,6 +33,26 @@ import { dbg, dbgErr, dbgGroup, dbgGroupEnd, snap } from "../../utils/debug";
  *                     default_<field> context keys when creating new items.
  *                     Used for mandatory fields that are not group-by fields
  *                     (e.g. odometer_unit on fleet.vehicle).
+ *   table_dialog    : comma-separated, ordered field names. Opening a row in
+ *                     individual mode then shows the WHOLE list as one wide
+ *                     table of those columns (RecordsTableDialog) instead of the
+ *                     clicked record in the comodel's form view; the clicked row
+ *                     is highlighted. A column may carry its own header:
+ *                     "visa_situation_id:VISA".
+ *   table_dialog_size : Dialog size — "sm" | "md" | "lg" | "xl" | "fs".
+ *                     Defaults to "xl"; use "fs" for long column lists.
+ *   table_dialog_title: Dialog title.
+ *   table_dialog_autosave : write each row through as soon as one of its cells
+ *                     changes, instead of waiting for the parent form to be
+ *                     saved. Off by default (the parent-transaction behaviour a
+ *                     form normally has).
+ *   table_dialog_edit_action : name of a method on the related model returning an
+ *                     action. Adds a trailing column with a button per row that
+ *                     opens it — for the columns that only mirror another
+ *                     record's data, or cannot be edited in place at all.
+ *
+ * Fields listed in table_dialog must be loaded by the sub-view, i.e. declared as
+ * <list> columns — add column_invisible="1" to keep one out of the list itself.
  */
 export class Many2ManyBField extends X2ManyField {
     static template = "many2many_batch.Many2ManyBField";
@@ -41,6 +63,7 @@ export class Many2ManyBField extends X2ManyField {
 
     setup() {
         super.setup();
+        this.dialogService = useService("dialog");
         const defaultMode =
             this.props.crudOptions?.default_mode === "batch" ? "batch" : "individual";
         this.batchState = useState({ mode: defaultMode });
@@ -74,12 +97,59 @@ export class Many2ManyBField extends X2ManyField {
         return [...this.groupByFields, ...staticKeys];
     }
 
+    /**
+     * Parsed `table_dialog` option: [{ name, label }] in the configured order.
+     * "visa_situation_id:VISA" overrides that column's header.
+     */
+    get tableDialogColumns() {
+        const raw = this.props.crudOptions?.table_dialog || "";
+        return raw
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+            .map((entry) => {
+                const [name, ...label] = entry.split(":");
+                return { name: name.trim(), label: label.join(":").trim() || null };
+            });
+    }
+
     // -------------------------------------------------------------------------
     // Mode switching
     // -------------------------------------------------------------------------
 
     setMode(mode) {
         this.batchState.mode = mode;
+    }
+
+    // -------------------------------------------------------------------------
+    // Opening a row
+    // -------------------------------------------------------------------------
+
+    /**
+     * Show the whole list as one wide table when `table_dialog` is configured,
+     * with the clicked record highlighted; otherwise fall back to the stock
+     * form-view dialog for that record alone.
+     */
+    async openRecord(record) {
+        const columns = this.tableDialogColumns;
+        if (!columns.length || !this.canOpenRecord) {
+            return super.openRecord(record);
+        }
+        this.dialogService.add(RecordsTableDialog, {
+            records: this.list.records,
+            activeRecord: record,
+            columns,
+            readonly: this.props.readonly,
+            autosave: Boolean(this.props.crudOptions?.table_dialog_autosave),
+            editAction: this.props.crudOptions?.table_dialog_edit_action || undefined,
+            editColumn: this.props.crudOptions?.table_dialog_edit_column || undefined,
+            size: this.props.crudOptions?.table_dialog_size,
+            // Falls back to the field's own label, so the dialog is titled after
+            // what the user clicked ("Crew Members").
+            title:
+                this.props.crudOptions?.table_dialog_title ||
+                this.props.record.fields[this.props.name]?.string,
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -243,7 +313,7 @@ export class Many2ManyBField extends X2ManyField {
 
     /**
      * Create ``count`` records at the bottom of the list, stamped with
-     * ``fieldValues`` without an onchange. Call it from inside a mutex job.
+     * ``fieldValues`` (see _applyFieldValues). Call it from inside a mutex job.
      *
      * Stamping in the same job as the creation is what keeps the values: the
      * creation's onchange may default them differently (a crew row's
@@ -259,7 +329,7 @@ export class Many2ManyBField extends X2ManyField {
         const context = this._buildContext(fieldValues);
         for (let added = 0; added < count; added++) {
             const record = await list._createNewRecordDatapoint({ context, manuallyAdded: true });
-            await record._update(fieldValues, { withoutOnchange: true });
+            this._applyFieldValues(record, fieldValues);
             await list._addRecord(record, { position: "bottom" });
         }
     }
@@ -267,6 +337,39 @@ export class Many2ManyBField extends X2ManyField {
     /** Delete a discarded draft from the bound list. */
     async onDiscardDraft(draft) {
         await this.list.delete(draft);
+    }
+
+    /**
+     * Stamp the group-by values onto a freshly-created record and mark it dirty.
+     *
+     * Values are written straight to record.data / record._changes.  The record
+     * was just created with these same values seeded from the default_<field>
+     * context, so this is a synchronous, RPC-free confirmation that keeps every
+     * clone in the right group on the very first render — and overrides
+     * whatever the creation onchange defaulted instead.
+     *
+     * The load-bearing line is `record.dirty = true`.  Without it a new record
+     * has dirty === false and _manuallyAdded === true, which satisfies
+     * Record.canBeAbandoned — so Odoo's stock editable list silently drops the
+     * record (via _abandonRecords in leaveEditMode) on the first click in
+     * Individual mode, and mis-targets edits to the first in-edition row.
+     *
+     * Why not route through record.update()?  update() sets this flag itself,
+     * but calling it on a brand-new addNewRecord datapoint (with Many2one group-by
+     * values) fires a per-record onchange cascade that throws inside Odoo's change
+     * preprocessors (`_preprocessMany2oneChanges` etc.).  Setting the flag directly
+     * reaches the same end state for the abandonment check without that cascade —
+     * and it mirrors how Odoo's own static_list sets `record.dirty` directly.
+     */
+    _applyFieldValues(record, fieldValues) {
+        for (const [f, v] of Object.entries(fieldValues)) {
+            if (v === false || v === null || v === undefined || v === "") continue;
+            record.data[f] = v;
+            if (record._changes && typeof record._changes === "object") {
+                record._changes[f] = v;
+            }
+        }
+        record.dirty = true;
     }
 
     /**

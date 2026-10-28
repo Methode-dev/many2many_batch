@@ -18,9 +18,17 @@
                t-if="groups.length or pendingDrafts.length or !props.readonly">
             <thead>
                 <tr class="o_many2many_b_header">
+                    <!-- data-field is the consumer's CSS hook: group columns are
+                         otherwise indistinguishable, and positional selectors
+                         break as soon as two views group the same model by a
+                         different number of fields. Under table-layout: fixed
+                         only this header row sizes the table, so the attribute
+                         has to be here (it is repeated on the cells for symmetry
+                         and for anything that styles a single row). -->
                     <th t-foreach="props.groupByFields"
                         t-as="field"
                         t-key="field"
+                        t-att-data-field="field"
                         class="o_many2many_b_group_col">
                         <t t-esc="getFieldLabel(field)"/>
                     </th>
@@ -42,6 +50,7 @@
                     <td t-foreach="props.groupByFields"
                         t-as="fieldName"
                         t-key="fieldName"
+                        t-att-data-field="fieldName"
                         class="o_many2many_b_group_cell align-middle">
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="group.records[0]"
@@ -107,6 +116,7 @@
                     <td t-foreach="props.groupByFields"
                         t-as="fieldName"
                         t-key="fieldName"
+                        t-att-data-field="fieldName"
                         class="o_many2many_b_group_cell align-middle">
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="entry.record"

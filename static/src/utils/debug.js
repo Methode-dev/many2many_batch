@@ -1,9 +1,11 @@
 /** @odoo-module **/
 
 /**
- * Flip to false to silence all [m2m_b] output without touching call sites.
+ * Flip to true to surface all [m2m_b] output without touching call sites.
+ * Kept false in committed code so the widget doesn't spam the production
+ * console; errors (dbgErr) are always printed regardless.
  */
-export const M2M_DEBUG = true;
+export const M2M_DEBUG = false;
 
 /**
  * Format a field value into a compact, readable string.

@@ -225,11 +225,65 @@ and flat views even in readonly.
 
 ---
 
+## Opening a row: the full table dialog
+
+Clicking a row in **Individual** mode normally opens the comodel's form view — the
+clicked record alone, in a two-column layout that reads nothing like the list you
+came from. With `table_dialog`, the **whole list** opens instead, as one wide table
+with the columns you name, the clicked row highlighted:
+
+```xml
+<field name="seafarer_ids" widget="many2many_b"
+       options='{"table_dialog_size": "fs",
+                 "table_dialog": "nationality_id, movement_type, visa_situation_id:VISA,
+                                  passport_number:Ppt n°, date_of_birth:DOB"}'>
+    <list>
+        <field name="nationality_id"/>
+        <field name="movement_type"/>
+        <field name="visa_situation_id"/>
+        <!-- loaded for the dialog, not shown as a column -->
+        <field name="passport_number" column_invisible="1"/>
+        <field name="date_of_birth" column_invisible="1"/>
+    </list>
+</field>
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Crew Members                                                            ✕  │
+│ ┌─────────────┬──────────┬───────┬───────────┬────────────┐                  │
+│ │ NATIONALITY │ MOVEMENT │ VISA  │ PPT N°    │ DOB        │                  │
+│ ├─────────────┼──────────┼───────┼───────────┼────────────┤                  │
+│ │ [France  ▾] │ [Joiner▾]│ [VOA▾]│ [156GH66] │ [11/07/89] │ ← clicked row    │
+│ │ [Philipp.▾] │ [Joiner▾]│ [VOA▾]│ [56782GG] │ [09/02/91] │                  │
+│ │ [Ukraine ▾] │ [Leaver▾]│ [Val▾]│ [        ]│ [        ] │ ← gaps visible   │
+│ └─────────────┴──────────┴───────┴───────────┴────────────┘                  │
+│                                                                 [ Close ]    │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+The compact list stays the overview; this is where the full data set is read and
+completed — and where a row missing a passport number is obvious.
+
+| Option | Meaning |
+|---|---|
+| `table_dialog` | Ordered, comma-separated field names. `field:Custom header` sets that column's label. |
+| `table_dialog_size` | `sm` / `md` / `lg` / `xl` / `fs`. Default `xl`; `fs` past ~8 columns. |
+| `table_dialog_title` | Title; defaults to the field's own label. |
+
+Cells are real `<Field>` widgets: editable whenever the parent field is editable,
+validated as usual, and saved with the parent form. Fields must be declared in the
+sub-view (`column_invisible="1"` keeps them out of the list). Headers are sticky and
+the table scrolls inside the dialog. The dialog only replaces the form dialog where
+Odoo opens one — an `editable` sub-list still edits inline.
+
+---
+
 ## How grouping works
 
 Grouping is **100% client-side** — no extra RPC, no intermediate model.
 
-The `groupRecords(records, groupByFields)` utility builds a stable key:
+The `BatchRenderer.groups` getter builds a stable key per record:
 
 ```js
 // For a record { brand: "Toyota", model: "Corolla", plate: "AB-123" }
@@ -258,14 +312,14 @@ Many2ManyBField (extends X2ManyField)
 │
 └── [batch mode]
       └─ <BatchRenderer>
-           ├── groupRecords() — pure function, no side-effects
+           ├── groups getter — client-side grouping, no side-effects
            ├── Existing groups  → [−] qty [+]   🗑
            ├── Pending rows     → text inputs + ✓ / ✕
-           └── Add a line       → addPendingRow()
+           └── Add a line       → addDraft()
 
 StaticList (Odoo internal)
-  ├── addNew({ context })   ← called by onQtyChange (delta > 0)
-  └── delete(record)        ← called by onQtyChange (delta < 0 or "remove_all")
+  ├── addNewRecord({ context })  ← called by onQtyChange (delta > 0) / onCloneDraft
+  └── delete(record)             ← called by onQtyChange (delta < 0 or "remove_all")
 ```
 
 ---
@@ -274,23 +328,21 @@ StaticList (Odoo internal)
 
 ```
 many2many_batch/
-├── __manifest__.py
+├── __manifest__.py                         # assets declared inline (no views/assets.xml)
 ├── models/
 │   └── test_models.py                      # fixture models for the tour
 ├── views/
 │   └── test_form_view.xml                  # fixture form view + action
+├── tests/                                  # HttpCase tour tests
 └── static/src/
     ├── index.js                            # field registration
+    ├── tours/                              # browser tours (web.assets_tests bundle)
     ├── utils/
-    │   └── group_records.js               # pure grouping utility
+    │   └── debug.js                        # namespaced console logging (M2M_DEBUG)
     └── components/
-        ├── many2many_b_field/
-        │   ├── many2many_b_field.js        # main OWL component + qty logic
-        │   ├── many2many_b_field.xml       # pill toggle + mode routing
-        │   └── many2many_b_field.scss      # pill + table styles
-        └── many2many_b_batch_renderer/
-            ├── batch_renderer.js           # grouped table component
-            └── batch_renderer.xml          # table template
+        ├── many2many_b_field/              # main OWL component + qty logic (.js/.xml/.scss)
+        ├── many2many_b_batch_renderer/     # grouped table component (.js/.xml/.scss)
+        └── group_by_cell/                  # <Field> wrapper with domain forwarding (.js/.xml)
 ```
 
 ---

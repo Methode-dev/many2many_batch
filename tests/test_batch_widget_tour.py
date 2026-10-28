@@ -44,3 +44,12 @@ class TestMany2ManyBWidgetTour(HttpCase):
             [("Citroen", "C3"), ("Citroen", "C3"), ("Fiat", "Panda"),
              ("Renault", "Clio"), ("Renault", "Clio")],
         )
+
+    def test_batch_individual_regression_tour(self):
+        # Regression guard: adding a batch then switching to Individual mode and
+        # clicking a row must not drop records or mis-target the edit.
+        self.start_tour(
+            "/odoo/action-many2many_batch.action_test_batch_parent",
+            "many2many_b_batch_regression",
+            login="admin",
+        )
