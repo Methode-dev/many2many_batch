@@ -40,6 +40,7 @@ export class BatchRenderer extends Component {
         groupByFields: { type: Array },     // ["state_id", "driver_id", ...]
         defaultValueKeys: { type: Array },  // fields auto-filled at item creation
         fields: { type: Object },           // field descriptors of the item model
+        fieldNodes: { type: Object, optional: true }, // the sub-list's columns, as parsed
         readonly: { type: Boolean },
         onQtyChange: { type: Function },    // ({group, delta}) => Promise<void>
         onAddDraft: { type: Function },     // ({onCreated}) => Promise<OwlRecord>
@@ -390,6 +391,11 @@ export class BatchRenderer extends Component {
     // Field labels
     // -------------------------------------------------------------------------
 
+    /** The sub-list's column for ``fieldName`` — carries its widget, if any. */
+    columnFieldNode(fieldName) {
+        return Object.values(this.props.fieldNodes || {}).find((node) => node.name === fieldName);
+    }
+
     getFieldLabel(fieldName) {
         return this.props.fields?.[fieldName]?.string || fieldName;
     }
@@ -403,29 +409,31 @@ export class BatchRenderer extends Component {
     }
 
     // -------------------------------------------------------------------------
-    // Virgin-record guard
+    // What [−] may remove
     // -------------------------------------------------------------------------
 
     /**
-     * Returns true when every record in a group is "virgin"
-     * (has no data beyond the fields that were auto-filled at creation time).
+     * [−] removes the group's last record, so only that one is checked: it
+     * must carry nothing the user entered beyond the group's own values. A
+     * named seafarer is not silently dropped — that takes Individual mode.
      *
-     * Non-virgin records have been individually edited → the [−] button is
-     * disabled so the user must switch to individual mode to remove a specific one.
+     * Readonly fields don't count: they are computed, never typed, and a crew
+     * row always carries some (its allowed movement / visa options), which
+     * used to keep [−] disabled on every crew group.
      */
-    isAllRecordsVirgin(group) {
-        const skip = new Set([
-            ...this.props.defaultValueKeys,
-            "id",
-            "display_name",
-        ]);
-        for (const record of group.records) {
-            for (const [key, value] of Object.entries(record.data)) {
-                if (skip.has(key) || key.startsWith("__")) continue;
-                if (this._isValueSet(value)) return false;
-            }
-        }
-        return true;
+    canRemoveOne(group) {
+        return group.records.length > 1 && !this._hasEnteredData(group.records.at(-1));
+    }
+
+    _hasEnteredData(record) {
+        const groupValues = new Set([...this.props.defaultValueKeys, "id", "display_name"]);
+        return Object.entries(record.data).some(
+            ([field, value]) =>
+                !groupValues.has(field) &&
+                !field.startsWith("__") &&
+                !this.props.fields[field]?.readonly &&
+                this._isValueSet(value)
+        );
     }
 
     _isValueSet(value) {
@@ -447,7 +455,7 @@ export class BatchRenderer extends Component {
     }
 
     onDecrement(group) {
-        if (group.records.length > 1 && this.isAllRecordsVirgin(group)) {
+        if (this.canRemoveOne(group)) {
             this.props.onQtyChange({ group, delta: -1 });
         }
     }

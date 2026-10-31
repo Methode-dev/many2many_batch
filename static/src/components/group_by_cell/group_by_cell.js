@@ -34,6 +34,8 @@ export class GroupByCell extends Component {
         record: { type: Object },
         name: { type: String },
         readonly: { type: Boolean, optional: true },
+        // The sub-list's column for this field, when the consumer declared one.
+        fieldNode: { type: Object, optional: true },
         // Called with the record when THIS cell's value changes (never on the
         // initial render). The table dialog uses it to write the row through
         // immediately; batch-table cells leave it unset.
@@ -66,7 +68,8 @@ export class GroupByCell extends Component {
      * for the rest.
      */
     many2oneOptionProps(record, name) {
-        const options = record.activeFields?.[name]?.options || {};
+        // Odoo 19 keeps a column's options on its arch node, not in activeFields.
+        const options = this.props.fieldNode?.options || record.activeFields?.[name]?.options || {};
         const props = {};
         if (options.no_open) {
             props.canOpen = false;
@@ -113,6 +116,12 @@ export class GroupByCell extends Component {
             name,
             readonly: Boolean(this.props.readonly) || this.fieldIsReadonly(record, name),
         };
+
+        // A column that names a widget (e.g. widget="many2one_country_flag")
+        // renders through it, with the column's own options and context.
+        if (this.props.fieldNode?.widget) {
+            return { ...base, fieldInfo: this.props.fieldNode };
+        }
 
         const fieldType = record.fields?.[name]?.type;
         if (fieldType !== "many2one") {

@@ -55,6 +55,7 @@
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="group.records[0]"
                                      name="fieldName"
+                                     fieldNode="columnFieldNode(fieldName)"
                                      readonly="props.readonly"/>
                         <span t-else="" class="text-muted fst-italic">—</span>
                     </td>
@@ -67,8 +68,8 @@
                             <button type="button"
                                     class="btn btn-sm btn-secondary o_many2many_b_btn_minus"
                                     t-on-click="() => this.onDecrement(group)"
-                                    t-att-disabled="(group.records.length &lt;= 1 or !isAllRecordsVirgin(group)) ? true : undefined"
-                                    t-att-title="!isAllRecordsVirgin(group) ? 'Some records have data — switch to Individual mode to remove a specific one' : undefined">
+                                    t-att-disabled="canRemoveOne(group) ? undefined : true"
+                                    t-att-title="group.records.length > 1 and !canRemoveOne(group) ? 'The last record has data of its own — switch to Individual mode to remove a specific one' : undefined">
                                 <i class="fa fa-minus"/>
                             </button>
                             <span class="o_many2many_b_qty_value fw-bold px-2 text-center position-relative"
@@ -120,7 +121,8 @@
                         class="o_many2many_b_group_cell align-middle">
                         <GroupByCell t-if="props.fields[fieldName]"
                                      record="entry.record"
-                                     name="fieldName"/>
+                                     name="fieldName"
+                                     fieldNode="columnFieldNode(fieldName)"/>
                         <span t-else="" class="text-muted fst-italic">—</span>
                     </td>
 

@@ -54,6 +54,7 @@
                 groupByFields="groupByFields"
                 defaultValueKeys="defaultValueKeys"
                 fields="list.fields"
+                fieldNodes="archInfo.fieldNodes || {}"
                 readonly="isReadonly"
                 onQtyChange.bind="onQtyChange"
                 onAddDraft.bind="onAddDraft"

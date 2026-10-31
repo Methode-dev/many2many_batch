@@ -375,6 +375,8 @@ in Individual mode.
   comodel, and must be columns of the sub-view (see above)
 - No aggregation columns beyond the count
 - Drag-to-reorder not available
-- `[−]` is disabled once any record in the group carries data outside the
-  group-by / `default_values` fields (`isAllRecordsVirgin`): removing a specific
-  one is an Individual-mode operation
+- `[−]` removes the group's last record, and is disabled when that record
+  carries data the user entered outside the group-by / `default_values` fields
+  (`canRemoveOne`): removing a specific one is an Individual-mode operation.
+  Readonly (computed) fields don't count — a crew row always carries some,
+  which used to disable `[−]` on every crew group
